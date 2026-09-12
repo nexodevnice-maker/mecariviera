@@ -1,0 +1,82 @@
+---
+import { contact } from '../content/site';
+
+const phone = contact.phones.value[0];
+---
+
+<nav class="mbar" data-mbar aria-label="Contact rapide" inert>
+  <a class="mbar__call" href={phone.href}>
+    Appeler<span class="mbar__num">{phone.display}</span>
+  </a>
+  <a class="mbar__req" href="#demande">Demande</a>
+</nav>
+
+<script>
+  // Barre d'action mobile : apparaît une fois le hero dépassé (ses propres boutons suffisent au-dessus).
+  const bar = document.querySelector<HTMLElement>('[data-mbar]');
+  if (bar) {
+    const update = () => {
+      const visible = window.scrollY > window.innerHeight * 0.6;
+      bar.classList.toggle('is-visible', visible);
+      bar.inert = !visible;
+    };
+    update();
+    addEventListener('scroll', update, { passive: true });
+  }
+</script>
+
+<style>
+  .mbar {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 60;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+    padding: 0.625rem var(--gutter) calc(0.625rem + env(safe-area-inset-bottom));
+    background: rgb(11 12 14 / 0.96);
+    border-top: 1px solid var(--line);
+    transform: translateY(100%);
+    transition: transform 0.4s var(--ease-out);
+  }
+
+  .mbar.is-visible {
+    transform: none;
+  }
+
+  .mbar a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 3.25rem;
+    font-weight: 600;
+  }
+
+  .mbar__call {
+    gap: 0.75rem;
+    background: var(--blue);
+    color: #fff;
+  }
+
+  .mbar__num {
+    font-weight: 500;
+    opacity: 0.9;
+  }
+
+  .mbar__req {
+    padding: 0 1.25rem;
+    border: 1px solid var(--line-strong);
+  }
+
+  @media (min-width: 900px) {
+    .mbar {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mbar {
+      transition: none;
+    }
+  }
+</style>

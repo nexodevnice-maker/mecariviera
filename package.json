@@ -1,0 +1,33 @@
+{
+  "name": "meca-riviera",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "assets:3d": "node scripts/optimize-3d.mjs",
+    "assets:env": "node scripts/bake-env.mjs",
+    "assets:posters": "node scripts/capture-posters.mjs",
+    "content:check": "node scripts/content-check.mjs",
+    "qa:shots": "node scripts/qa-shots.mjs",
+    "qa:perf": "node scripts/qa-perf.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/archivo": "^5.3.0",
+    "astro": "^7.3.2",
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.5.0",
+    "@gltf-transform/extensions": "^4.5.0",
+    "@gltf-transform/functions": "^4.5.0",
+    "@types/three": "^0.185.4",
+    "axe-core": "^4.13.0",
+    "meshoptimizer": "^1.2.0",
+    "playwright-core": "^1.63.0",
+    "sharp": "^0.35.4",
+    "typescript": "^7.0.2"
+  }
+}

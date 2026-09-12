@@ -1,0 +1,144 @@
+---
+import { contact } from '../content/site';
+import Mark from './Mark.astro';
+
+const phone = contact.phones.value[0];
+---
+
+<header class="site-header" data-header>
+  <div class="site-header__inner">
+    <a class="brand" href="/" aria-label="MECA RIVIERA — accueil">
+      <Mark class="brand__mark" />
+      <span class="brand__name">MECA RIVIERA</span>
+    </a>
+    <nav class="site-nav" aria-label="Navigation principale">
+      <ul>
+        <li><a href="#services">Services</a></li>
+        <li><a href="#methode">Méthode</a></li>
+        <li><a href="#zone">Zone</a></li>
+        <li><a href="#demande">Contact</a></li>
+      </ul>
+    </nav>
+    <div class="site-header__actions">
+      <a class="header-phone" href={phone.href}>
+        <span class="label">Appeler</span>
+        <span class="header-phone__num">{phone.display}</span>
+      </a>
+      <a class="btn btn--primary btn--small header-cta" href="#demande">Demander une intervention</a>
+    </div>
+  </div>
+</header>
+
+<script>
+  // Amélioration progressive : en-tête opaque par défaut (sans JS), transparent seulement en haut de page.
+  const header = document.querySelector<HTMLElement>('[data-header]');
+  if (header) {
+    const update = () => header.classList.toggle('is-top', window.scrollY <= 24);
+    update();
+    addEventListener('scroll', update, { passive: true });
+  }
+</script>
+
+<style>
+  .site-header {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 50;
+    height: var(--header-h);
+    background: rgb(11 12 14 / 0.94);
+    border-bottom: 1px solid var(--line);
+    transition:
+      background-color 0.35s var(--ease-out),
+      border-color 0.35s var(--ease-out);
+  }
+
+  .site-header.is-top {
+    background: transparent;
+    border-bottom-color: transparent;
+  }
+
+  .site-header__inner {
+    display: flex;
+    align-items: center;
+    gap: 2.5rem;
+    height: 100%;
+    max-width: var(--max);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: none;
+  }
+
+  .brand :global(.brand__mark) {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+
+  .brand__name {
+    font-stretch: var(--wide);
+    font-weight: 800;
+    font-size: 0.9375rem;
+    letter-spacing: 0.03em;
+  }
+
+  .site-nav ul {
+    display: flex;
+    gap: 2rem;
+  }
+
+  .site-nav a {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-2);
+    transition: color 0.2s;
+  }
+
+  .site-nav a:hover {
+    color: var(--text);
+  }
+
+  .site-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-left: auto;
+  }
+
+  .header-phone {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.625rem;
+  }
+
+  .header-phone .label {
+    color: var(--text-3);
+  }
+
+  .header-phone__num {
+    font-weight: 600;
+    font-size: 0.9375rem;
+    letter-spacing: 0.01em;
+  }
+
+  @media (max-width: 1099px) {
+    .site-nav {
+      display: none;
+    }
+  }
+
+  @media (max-width: 719px) {
+    .header-cta,
+    .header-phone .label {
+      display: none;
+    }
+
+    .brand__name {
+      font-size: 0.8125rem;
+    }
+  }
+</style>

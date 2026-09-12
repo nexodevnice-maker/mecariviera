@@ -1,0 +1,464 @@
+---
+import { VEHICLE_IDS } from '../3d/vehicles';
+import { contact, services, zone, type CarZone, type Service } from '../content/site';
+
+const phone = contact.phones.value[0];
+const towns = zone.towns.value.map((t) => t.name);
+const townsText = `${towns.slice(0, -1).join(', ')}, ${towns[towns.length - 1]}`;
+
+const zoneLabel: Record<CarZone, string> = {
+  engine: 'Sous le capot',
+  wheel: 'Roues & liaisons au sol',
+  front: 'Face avant',
+  cockpit: 'Habitacle',
+  rear: 'Arrière',
+};
+
+// Les arrêts de caméra découlent du contenu : un service ajouté avec une zone rejoint son arrêt, dans
+// l'ordre du tour que fait le mécanicien (face avant, capot, roue, poste de conduite, arrière).
+const ORDER: CarZone[] = ['front', 'engine', 'wheel', 'cockpit', 'rear'];
+const grouped = new Map<CarZone, Service[]>();
+for (const s of services) {
+  if (s.zone) grouped.set(s.zone, [...(grouped.get(s.zone) ?? []), s]);
+}
+const stops = [...ORDER, ...[...grouped.keys()].filter((z) => !ORDER.includes(z))]
+  .filter((zone) => grouped.has(zone))
+  .map((zone) => ({ zone, list: grouped.get(zone) as Service[] }));
+const pad = (n: number) => String(n).padStart(2, '0');
+// Longueur de scroll de chaque arrêt (écrans × 100) : elle fait le rythme, avec celui de la caméra (rigs.ts).
+const SPAN: Record<CarZone, number> = { front: 80, engine: 100, wheel: 110, cockpit: 90, rear: 90 };
+---
+
+<section class="stage" data-stage aria-label="Présentation et services">
+  <div class="stage__viewport" aria-hidden="true">
+    <!-- Affiche du véhicule tiré : visible immédiatement, puis recouverte par la scène 3D ; repli sans WebGL. -->
+    <picture class="stage__poster">
+      <source media="(max-width: 899px)" type="image/avif" data-srcset="/media/stage-{v}-mobile.avif" width="780" height="1688" />
+      <source media="(max-width: 899px)" type="image/webp" data-srcset="/media/stage-{v}-mobile.webp" width="780" height="1688" />
+      <source type="image/avif" data-srcset="/media/stage-{v}-desktop.avif" />
+      <img data-src="/media/stage-{v}-desktop.webp" width="1440" height="900" alt="" fetchpriority="high" decoding="async" />
+    </picture>
+    <script define:vars={{ ids: VEHICLE_IDS }}>
+      // Véhicule de la visite, tiré avant tout chargement (1 chance sur 3) : affiche et scène 3D identiques.
+      // ?vehicle=c63|rs3|m4 le fixe (captures, contrôle).
+      const asked = new URLSearchParams(location.search).get('vehicle');
+      const vehicle = ids.includes(asked) ? asked : ids[Math.floor(Math.random() * ids.length)];
+      document.documentElement.dataset.vehicle = vehicle;
+      const poster = document.currentScript.previousElementSibling;
+      for (const source of poster.querySelectorAll('source')) source.srcset = source.dataset.srcset.replace('{v}', vehicle);
+      const image = poster.querySelector('img');
+      image.src = image.dataset.src.replace('{v}', vehicle);
+    </script>
+    <noscript>
+      <picture class="stage__poster">
+        <source media="(max-width: 899px)" srcset="/media/stage-c63-mobile.webp" />
+        <img src="/media/stage-c63-desktop.webp" width="1440" height="900" alt="" />
+      </picture>
+    </noscript>
+    <canvas class="stage__canvas" data-stage-canvas></canvas>
+    <!-- Extinction du dernier arrêt : la scène se fond dans le noir de la page (opacité pilotée par la scène). -->
+    <div class="stage__night" data-night></div>
+    <svg class="stage__callout" data-callout>
+      <path class="stage__callout-line" d=""></path>
+      <circle class="stage__callout-ring" r="8"></circle>
+      <circle class="stage__callout-dot" r="2.5"></circle>
+    </svg>
+  </div>
+
+  <div class="stage__content">
+    <div class="hero" data-stop="hero">
+      <p class="hero__eyebrow label">
+        <span class="hero__brand">MECA RIVIERA</span>
+        <span class="hero__eyebrow-sep" aria-hidden="true"></span>
+        <span>Mécanique automobile à domicile</span>
+      </p>
+      <h1 class="hero__title">
+        <span>La mécanique</span>{' '}
+        <span>vient à votre</span>{' '}
+        <span>véhicule.</span>
+      </h1>
+      <p class="hero__lede">Là où elle est garée, chez vous&nbsp;: {townsText} et alentours, 24&nbsp;h/24 et 7&nbsp;j/7.</p>
+      <div class="hero__actions">
+        <a class="btn btn--primary" href={phone.href}>
+          Appeler<span class="btn__sep" aria-hidden="true"></span>{phone.display}
+        </a>
+        <a class="btn btn--ghost" href="#demande">Demander une intervention</a>
+      </div>
+      <p class="hero__foot label">
+        <span>{zone.area.value}</span>
+        <span class="hero__cue" aria-hidden="true">Le tour du véhicule ↓</span>
+      </p>
+    </div>
+
+    <div class="overview" data-stop="overview" id="services" style="--span: 110">
+      <div class="overview__panel" data-focus>
+        <p class="label overview__kicker">Services</p>
+        <h2 class="overview__title">Ce qu’on règle chez vous.</h2>
+        <p class="overview__text">
+          Entretien, pièces d’usure, pannes&nbsp;: tout se règle sur place. On fait le tour de la voiture, zone par zone.
+        </p>
+      </div>
+    </div>
+
+    {
+      stops.map(({ zone: z, list }, i) => (
+        <article class="stop" data-stop={z} aria-labelledby={`zone-${z}`} style={`--span: ${SPAN[z]}`}>
+          <div class="stop__panel" data-focus>
+            <p class="stop__index label" data-callout-origin>
+              <span class="stop__num">{pad(i + 1)}</span>
+              <span class="stop__total">/ {pad(stops.length)}</span>
+              <span class="stop__zone" id={`zone-${z}`}>{zoneLabel[z]}</span>
+            </p>
+            {list.map((s) => (
+              <div class="svc" id={s.id}>
+                <p class="svc__symptom">
+                  <span class="svc__lamp" aria-hidden="true" />
+                  {s.symptom}
+                </p>
+                <h3 class="svc__title">{s.label}</h3>
+                <p class="svc__intervention">{s.intervention}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+      ))
+    }
+
+    <!-- Silence : on revient à l'avant pour ouvrir le capot, les lumières s'éteignent. -->
+    <div class="stop stop--night" data-stop="night" style="--span: 90" aria-hidden="true"></div>
+  </div>
+</section>
+
+<script>
+  import { bootStage } from '../3d/boot';
+
+  bootStage(document.querySelector<HTMLElement>('[data-stage]'));
+</script>
+
+<style>
+  .stage {
+    position: relative;
+  }
+
+  .stage__viewport {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    height: 100svh;
+    overflow: hidden;
+  }
+
+  .stage__poster img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 100% 50%;
+  }
+
+  @media (max-width: 899px) {
+    .stage__poster img {
+      object-position: 50% 0;
+    }
+  }
+
+  .stage__canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 1.4s var(--ease-out);
+  }
+
+  .stage__canvas:global(.is-ready) {
+    opacity: 1;
+  }
+
+  .stage__night {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    background: var(--ink);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .stage__callout {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  /* Desktop : voile sous la colonne de texte — les plans rapprochés font passer la voiture dessous. */
+  @media (min-width: 900px) {
+    .stage__viewport::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, var(--ink) 0%, rgb(11 12 14 / 0.72) 26%, rgb(11 12 14 / 0) 44%);
+      pointer-events: none;
+    }
+  }
+
+  /* Mobile : le véhicule en haut, les textes montent du bas. La chaussée la plus proche de l'objectif (bas
+     de l'écran) se fond dans la nuit : la voiture se tient dans sa flaque de lumière, pas sur un sol gris. */
+  @media (max-width: 899px) {
+    .stage__viewport::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(0deg, var(--ink) 0%, rgb(11 12 14 / 0.7) 28%, rgb(11 12 14 / 0) 52%);
+      pointer-events: none;
+    }
+  }
+
+  .stage__callout-line,
+  .stage__callout-ring {
+    fill: none;
+    stroke: var(--blue-soft);
+    stroke-width: 1;
+  }
+
+  .stage__callout-dot {
+    fill: var(--paper);
+  }
+
+  .stage__content {
+    position: relative;
+    margin-top: -100vh;
+    margin-top: -100svh;
+  }
+
+  /* — Hero ———————————————————————————————— */
+
+  .hero {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 100vh;
+    min-height: 100svh;
+    max-width: var(--max);
+    margin-inline: auto;
+    padding: calc(var(--header-h) + 2rem) var(--gutter) 2rem;
+  }
+
+  .hero__eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    color: var(--text-2);
+  }
+
+  .hero__eyebrow-sep {
+    width: 2rem;
+    height: 1px;
+    background: var(--blue);
+  }
+
+  .hero__title {
+    margin-top: 1.75rem;
+    font-stretch: var(--wide);
+    font-weight: 800;
+    font-size: clamp(2.25rem, 4.9vw, 5.75rem);
+    line-height: 0.9;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+  }
+
+  .hero__title span {
+    display: block;
+  }
+
+  .hero__lede {
+    max-width: 34rem;
+    margin-top: 1.75rem;
+    font-size: clamp(1rem, 1.15vw, 1.1875rem);
+    color: var(--text-2);
+  }
+
+  .hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 2.25rem;
+  }
+
+  .hero__foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: clamp(2.5rem, 7vh, 5rem);
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--line);
+    color: var(--text-3);
+  }
+
+  /* — Services : sommaire ————————————————————— */
+
+  .overview,
+  .stop {
+    display: flex;
+    align-items: center;
+    min-height: calc(var(--span, 100) * 1vh);
+    min-height: calc(var(--span, 100) * 1svh);
+    max-width: var(--max);
+    margin-inline: auto;
+    padding: 6rem var(--gutter);
+  }
+
+  /* Colonnes de texte proportionnelles : même part de largeur de 1024 à 1440 px (le véhicule garde sa place). */
+  .overview__panel {
+    width: clamp(22rem, 31vw, 28rem);
+  }
+
+  .overview__kicker {
+    color: var(--blue-soft);
+  }
+
+  .overview__title {
+    margin-top: 1.25rem;
+    font-stretch: var(--wide);
+    font-weight: 800;
+    font-size: clamp(2rem, 3.6vw, 3.5rem);
+    line-height: 0.95;
+    letter-spacing: -0.015em;
+    text-transform: uppercase;
+  }
+
+  .overview__text {
+    margin-top: 1.5rem;
+    color: var(--text-2);
+  }
+
+  /* — Services : arrêts ——————————————————————— */
+
+  .stop__panel {
+    width: clamp(20rem, 29vw, 26rem);
+  }
+
+  .stop__index {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 1.75rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--line);
+    color: var(--text-3);
+  }
+
+  .stop__num {
+    color: var(--text);
+  }
+
+  .stop__zone {
+    margin-left: auto;
+    color: var(--blue-soft);
+  }
+
+  .svc + .svc {
+    margin-top: 2.25rem;
+    padding-top: 2.25rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .svc__symptom {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    font-size: 0.9375rem;
+    color: var(--text-2);
+  }
+
+  .svc__lamp {
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--red);
+    transform: translateY(-0.05em);
+  }
+
+  .svc__title {
+    margin-top: 0.875rem;
+    font-stretch: var(--wide);
+    font-weight: 800;
+    font-size: clamp(1.625rem, 2.4vw, 2.25rem);
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+  }
+
+  .svc__intervention {
+    margin-top: 0.875rem;
+    font-size: 1.0625rem;
+  }
+
+  /* — Mobile : le véhicule en haut, le texte en feuilles qui montent par-dessus ——— */
+
+  @media (max-width: 899px) {
+    .hero__cue {
+      display: none;
+    }
+
+    .overview,
+    .stop {
+      display: block;
+      min-height: 0;
+      max-width: none;
+      padding: calc(var(--span, 100) * 0.6vh) 0 0;
+      padding: calc(var(--span, 100) * 0.6svh) 0 0;
+    }
+
+    .overview__panel,
+    .stop__panel {
+      width: 100%;
+      padding: 1.75rem var(--gutter) 2.75rem;
+      background: var(--ink);
+      border-top: 1px solid var(--line);
+    }
+
+    .svc__title {
+      font-size: 1.625rem;
+    }
+  }
+
+  @media (max-width: 599px) {
+    .hero {
+      padding-bottom: 1.5rem;
+    }
+
+    .hero__brand,
+    .hero__eyebrow-sep {
+      display: none;
+    }
+
+    .hero__title {
+      margin-top: 1.25rem;
+      font-size: 9vw;
+    }
+
+    .hero__lede {
+      margin-top: 1.25rem;
+      font-size: 0.9375rem;
+    }
+
+    .hero__actions {
+      margin-top: 1.5rem;
+    }
+
+    .hero__actions .btn {
+      flex: 1 1 auto;
+    }
+
+    .hero__foot {
+      margin-top: 2rem;
+    }
+  }
+</style>

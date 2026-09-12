@@ -1,0 +1,26 @@
+---
+import Base from '../layouts/Base.astro';
+import Contact from '../components/Contact.astro';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import Method from '../components/Method.astro';
+import MobileBar from '../components/MobileBar.astro';
+import Stage from '../components/Stage.astro';
+import Territory from '../components/Territory.astro';
+
+const title = 'MECA RIVIERA — Mécanicien à domicile à Nice, Antibes, Cagnes';
+const description =
+  'Entretien, vidange, freinage, diagnostic, batterie, climatisation : MECA RIVIERA intervient chez vous à Nice, Cagnes-sur-Mer, Villeneuve-Loubet, Antibes.';
+---
+
+<Base title={title} description={description}>
+  <Header />
+  <main id="contenu">
+    <Stage />
+    <Method />
+    <Territory />
+    <Contact />
+  </main>
+  <Footer />
+  <MobileBar />
+</Base>

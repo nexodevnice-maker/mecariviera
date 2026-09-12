@@ -1,0 +1,500 @@
+---
+import { contact, method, services, zone } from '../content/site';
+
+const phones = contact.phones.value;
+const steps = method.value;
+const pad = (n: number) => String(n).padStart(2, '0');
+const towns = zone.towns.value.map((t) => t.name);
+const needs = [...services.filter((s) => s.zone).map((s) => s.label), 'Dépannage', 'Autre'];
+// Destination des demandes : un point d'accès serveur s'il est configuré, sinon un SMS prêt à envoyer.
+const endpoint = import.meta.env.PUBLIC_FORM_ENDPOINT as string | undefined;
+---
+
+<section class="contact" id="demande" aria-labelledby="demande-title">
+  <div class="wrap contact__grid">
+    <div class="contact__intro">
+      <p class="label contact__kicker">Demande d’intervention</p>
+      <!-- La conclusion du parcours : la voiture n'a pas bougé, c'est MECA RIVIERA qui se déplace. -->
+      <h2 class="contact__title" id="demande-title">
+        <span>Votre véhicule reste là.</span>{' '}
+        <span class="contact__accent">MECA RIVIERA vient à vous.</span>
+      </h2>
+      <p class="contact__lede">
+        Le plus rapide reste l’appel. Pour une demande écrite, décrivez le véhicule et le problème&nbsp;: on revient vers vous pour
+        convenir de l’intervention.
+      </p>
+      <ul class="contact__phones">
+        {
+          phones.map((p) => (
+            <li>
+              <a href={p.href}>{p.display}</a>
+            </li>
+          ))
+        }
+      </ul>
+      <p class="contact__meta label">
+        <span>Disponible {contact.availability.value}</span>
+        {
+          contact.snapchat.value && (
+            <a href={`https://www.snapchat.com/add/${contact.snapchat.value}`} rel="noopener" target="_blank">
+              Snapchat @{contact.snapchat.value}
+            </a>
+          )
+        }
+      </p>
+    </div>
+
+    <form class="form" data-form novalidate>
+      <div class="form__row">
+        <label class="field">
+          <span class="field__label">Nom</span>
+          <input name="nom" type="text" autocomplete="name" required />
+        </label>
+        <label class="field">
+          <span class="field__label">Téléphone</span>
+          <input name="telephone" type="tel" autocomplete="tel" inputmode="tel" required />
+        </label>
+      </div>
+      <div class="form__row">
+        <label class="field">
+          <span class="field__label">Commune</span>
+          <select name="commune" required>
+            <option value="" selected disabled>Choisir</option>
+            {towns.map((t) => <option>{t}</option>)}
+            <option>Autre commune du 06</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Véhicule</span>
+          <input name="vehicule" type="text" placeholder="Marque, modèle, année" />
+        </label>
+      </div>
+      <fieldset class="needs">
+        <legend class="field__label">Besoin</legend>
+        <div class="needs__list">
+          {
+            needs.map((n) => (
+              <label class="need">
+                <input type="checkbox" name="besoin" value={n} />
+                <span>{n}</span>
+              </label>
+            ))
+          }
+        </div>
+      </fieldset>
+      <label class="field">
+        <span class="field__label">Message <span class="field__opt">facultatif</span></span>
+        <textarea name="message" rows="3" placeholder="Symptômes, voyant allumé, disponibilités…"></textarea>
+      </label>
+      <div class="form__foot">
+        <button class="btn btn--primary" type="submit">{endpoint ? 'Envoyer la demande' : 'Envoyer par SMS'}</button>
+        <p class="form__legal">
+          {endpoint ? '' : 'Votre application SMS s’ouvre avec la demande déjà rédigée. '}Vos coordonnées servent uniquement à
+          traiter cette demande.
+        </p>
+      </div>
+      <div class="form__result" data-form-result role="status" aria-live="polite" hidden></div>
+    </form>
+
+    <!-- Ce qui se passe ensuite : sous l'appel sur desktop, après le formulaire sur mobile. -->
+    <div class="contact__next">
+      <h3 class="label contact__next-title" id="deroule-title">Le déroulé d’une intervention</h3>
+      <ol class="contact__steps" aria-labelledby="deroule-title">
+        {
+          steps.map((step, i) => (
+            <li>
+              <span class="contact__step-num">{pad(i + 1)}</span>
+              <span>
+                <strong>{step.title}.</strong> {step.text}
+              </span>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { contact } from '../content/site';
+
+  const endpoint = import.meta.env.PUBLIC_FORM_ENDPOINT as string | undefined;
+  const phone = contact.phones.value[0];
+  const requests = contact.requests.value;
+  const form = document.querySelector<HTMLFormElement>('[data-form]');
+  const result = form?.querySelector<HTMLElement>('[data-form-result]');
+
+  const summarize = (data: FormData) =>
+    [
+      'Demande d’intervention MECA RIVIERA',
+      `Nom : ${data.get('nom')}`,
+      `Tél. : ${data.get('telephone')}`,
+      `Commune : ${data.get('commune')}`,
+      data.get('vehicule') ? `Véhicule : ${data.get('vehicule')}` : '',
+      data.getAll('besoin').length ? `Besoin : ${data.getAll('besoin').join(', ')}` : '',
+      data.get('message') ? `Message : ${data.get('message')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+  // Commune choisie sur la carte : la demande est préparée pour elle.
+  addEventListener('meca:town', (event) => {
+    const town = (event as CustomEvent<string>).detail;
+    const select = form?.querySelector<HTMLSelectElement>('select[name="commune"]');
+    if (select && [...select.options].some((option) => option.value === town)) select.value = town;
+  });
+
+  const show = (html: string, tone: 'ok' | 'error') => {
+    if (!result) return;
+    result.dataset.tone = tone;
+    result.innerHTML = html;
+    result.hidden = false;
+  };
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+
+    // Sans point d'accès serveur : la demande part par SMS, rédigée d'avance ; l'utilisateur n'a qu'à envoyer.
+    if (!endpoint) {
+      const sms = `${requests.href}?&body=${encodeURIComponent(summarize(data))}`;
+      window.location.href = sms;
+      show(
+        `<p><strong>Votre demande est prête dans l’application SMS&nbsp;:</strong> il ne reste qu’à l’envoyer.</p>
+         <p>Rien ne s’est ouvert&nbsp;? <a href="${sms}">Ouvrir le SMS</a> ou appelez le <a href="${phone.href}">${phone.display}</a>.</p>`,
+        'ok',
+      );
+      return;
+    }
+
+    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ ...Object.fromEntries(data), besoin: data.getAll('besoin') }),
+      });
+      if (!response.ok) throw new Error(String(response.status));
+      form.reset();
+      show('<p><strong>Demande envoyée.</strong> On revient vers vous pour convenir de l’intervention.</p>', 'ok');
+    } catch {
+      show(
+        `<p><strong>L’envoi n’a pas abouti.</strong> Appelez directement le <a href="${phone.href}">${phone.display}</a>.</p>`,
+        'error',
+      );
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .contact {
+    padding-block: clamp(6rem, 12vw, 10rem);
+    border-top: 1px solid var(--line);
+    /* Même nuit que la carte : une lueur froide et basse, derrière le formulaire. */
+    background: radial-gradient(46% 55% at 82% 38%, rgb(36 85 255 / 0.06), transparent 72%);
+  }
+
+  /* Desktop : l'appel puis le déroulé à gauche, le formulaire à droite. Mobile : appel, formulaire, déroulé. */
+  .contact__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas: 'intro form' 'next form';
+    column-gap: clamp(2.5rem, 7vw, 7rem);
+  }
+
+  .contact__intro {
+    grid-area: intro;
+  }
+
+  .contact__next {
+    grid-area: next;
+    margin-top: 3rem;
+  }
+
+  .contact__kicker {
+    color: var(--blue-soft);
+  }
+
+  .contact__title {
+    margin-top: 1.25rem;
+    font-stretch: var(--wide);
+    font-weight: 800;
+    font-size: clamp(1.875rem, 3vw, 3rem);
+    line-height: 0.95;
+    letter-spacing: -0.015em;
+    text-transform: uppercase;
+  }
+
+  .contact__title span {
+    display: block;
+    text-wrap: balance;
+  }
+
+  .contact__accent {
+    color: var(--blue-soft);
+  }
+
+  .contact__lede {
+    max-width: 28rem;
+    margin-top: 1.5rem;
+    color: var(--text-2);
+  }
+
+  /* Ce qui se passe ensuite : le déroulé d'une intervention, une vraie séquence. */
+  .contact__next-title {
+    color: var(--text-3);
+  }
+
+  .contact__steps {
+    display: grid;
+    gap: 0.875rem;
+    max-width: 28rem;
+    margin-top: 1rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.9375rem;
+    color: var(--text-2);
+  }
+
+  .contact__steps li {
+    display: grid;
+    grid-template-columns: 2.25rem 1fr;
+    gap: 0.5rem;
+  }
+
+  .contact__step-num {
+    font-stretch: var(--wide);
+    font-weight: 300;
+    color: var(--blue-soft);
+  }
+
+  .contact__steps strong {
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .contact__phones {
+    margin-top: 2.5rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .contact__phones a {
+    display: block;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--line);
+    font-stretch: var(--wide);
+    font-weight: 700;
+    font-size: clamp(1.5rem, 2.4vw, 2.125rem);
+    letter-spacing: -0.01em;
+    transition: color 0.2s;
+  }
+
+  .contact__phones a:hover {
+    color: var(--blue-soft);
+  }
+
+  .contact__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    margin-top: 1.25rem;
+    color: var(--text-3);
+  }
+
+  .contact__meta a {
+    color: var(--blue-soft);
+    border-bottom: 1px solid currentColor;
+  }
+
+  /* — Formulaire : champs soulignés, pas de boîtes ——————— */
+
+  .form {
+    grid-area: form;
+    align-self: start;
+    display: grid;
+    gap: 1.75rem;
+  }
+
+  .form__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.75rem;
+  }
+
+  .field {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .field__label {
+    font-stretch: var(--semi);
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-2);
+  }
+
+  .field__opt {
+    margin-left: 0.5rem;
+    color: var(--text-3);
+    letter-spacing: 0.08em;
+    text-transform: none;
+  }
+
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    padding: 0.75rem 0;
+    border: 0;
+    border-bottom: 1px solid var(--line-strong);
+    border-radius: 0;
+    background: transparent;
+    font-size: 1.0625rem;
+    transition: border-color 0.2s;
+  }
+
+  .field select {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-2) 50%),
+      linear-gradient(135deg, var(--text-2) 50%, transparent 50%);
+    background-position:
+      right 6px center,
+      right 1px center;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+  }
+
+  .field select option {
+    background: var(--ink-2);
+    color: var(--text);
+  }
+
+  /* Tant qu'aucune commune n'est choisie, « Choisir » se lit comme une indication, pas une valeur. */
+  .field select:invalid {
+    color: var(--text-3);
+  }
+
+  .field textarea {
+    resize: vertical;
+  }
+
+  .field input::placeholder,
+  .field textarea::placeholder {
+    color: var(--text-3);
+  }
+
+  .field input:focus-visible,
+  .field select:focus-visible,
+  .field textarea:focus-visible {
+    outline: none;
+    border-bottom-color: var(--blue-soft);
+  }
+
+  .needs {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .needs__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.875rem;
+  }
+
+  .need input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .need span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.5rem;
+    padding: 0 0.875rem;
+    border: 1px solid var(--line-strong);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition:
+      background-color 0.2s,
+      border-color 0.2s,
+      color 0.2s;
+  }
+
+  .need input:checked + span {
+    border-color: var(--blue);
+    background: var(--blue);
+    color: #fff;
+  }
+
+  .need input:focus-visible + span {
+    outline: 2px solid var(--blue-soft);
+    outline-offset: 2px;
+  }
+
+  .form__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem 1.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .form__legal {
+    max-width: 24rem;
+    font-size: 0.8125rem;
+    color: var(--text-3);
+  }
+
+  .form__result {
+    padding: 1.25rem 1.5rem;
+    border-left: 2px solid var(--blue);
+    background: var(--ink-2);
+    color: var(--text-2);
+  }
+
+  .form__result[data-tone='error'] {
+    border-left-color: var(--red);
+  }
+
+  .form__result :global(p + p) {
+    margin-top: 0.5rem;
+  }
+
+  .form__result :global(strong) {
+    color: var(--text);
+  }
+
+  .form__result :global(a) {
+    color: var(--text);
+    border-bottom: 1px solid var(--blue);
+  }
+
+  @media (max-width: 899px) {
+    .contact__grid {
+      grid-template-columns: 1fr;
+      grid-template-rows: none;
+      grid-template-areas: 'intro' 'form' 'next';
+      row-gap: 3rem;
+    }
+
+    .contact__next {
+      margin-top: 0;
+    }
+  }
+
+  @media (max-width: 599px) {
+    .form__row {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

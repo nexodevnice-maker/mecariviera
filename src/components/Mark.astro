@@ -1,0 +1,14 @@
+---
+// Signe MECA RIVIERA provisoire (logo officiel : TO_CONFIRM) — deux traits obliques,
+// marquage au sol et vitesse : bleu pour l'intervention, blanc pour le véhicule.
+interface Props {
+  class?: string;
+}
+
+const { class: className } = Astro.props;
+---
+
+<svg class={className} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+  <path d="M12.5 6h8L15 26H7z" fill="var(--blue)"></path>
+  <path d="M22.5 6h3.5l-5.5 20H17z" fill="currentColor"></path>
+</svg>

@@ -1,0 +1,766 @@
+---
+import { contact, zone } from '../content/site';
+
+const phone = contact.phones.value[0];
+const towns = zone.towns.value;
+
+// Carte schématique (pas un fond cartographique) : projection équirectangulaire locale,
+// à la même échelle dans les deux directions (1 km ≈ 44,4 unités).
+const LON0 = 7.05;
+const LAT0 = 43.73;
+const KX = 3571.7; // 4936 × cos(43,63°)
+const KY = 4936; // unités par degré de latitude
+const KM = KY / 111.2;
+type Pt = [number, number];
+const project = ([lon, lat]: Pt): Pt => [(lon - LON0) * KX, (LAT0 - lat) * KY];
+const f = (n: number) => n.toFixed(1);
+
+/** Courbe lissée (Catmull-Rom → Bézier) passant par tous les points. */
+const smooth = (pts: Pt[]) => {
+  let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [p0, p1, p2, p3] = [pts[i - 1] ?? pts[i], pts[i], pts[i + 1], pts[i + 2] ?? pts[i + 1]];
+    d += ` C${f(p1[0] + (p2[0] - p0[0]) / 6)},${f(p1[1] + (p2[1] - p0[1]) / 6)}`;
+    d += ` ${f(p2[0] - (p3[0] - p1[0]) / 6)},${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])},${f(p2[1])}`;
+  }
+  return d;
+};
+
+/** Décalage vers le large : la mer est à droite du sens de tracé du rivage. */
+const offset = (pts: Pt[], d: number): Pt[] =>
+  pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)];
+    const b = pts[Math.min(pts.length - 1, i + 1)];
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [p[0] - ((b[1] - a[1]) / length) * d, p[1] + ((b[0] - a[0]) / length) * d];
+  });
+
+/** Degrés et minutes : 43.7031 → « 43°42′ ». */
+const dm = (value: number) => {
+  const minutes = Math.round(value * 60);
+  return `${Math.floor(minutes / 60)}°${String(minutes % 60).padStart(2, '0')}′`;
+};
+
+// Trait de côte simplifié, de Golfe-Juan au cap Ferrat (lon, lat approximatifs).
+const shore = (
+  [
+    [7.05, 43.567], [7.078, 43.566], [7.108, 43.566], [7.12, 43.556], [7.13, 43.545], [7.14, 43.56],
+    [7.132, 43.575], [7.128, 43.585], [7.126, 43.592], [7.133, 43.616], [7.141, 43.64], [7.165, 43.658],
+    [7.195, 43.66], [7.213, 43.652], [7.225, 43.66], [7.245, 43.685], [7.268, 43.694], [7.286, 43.696],
+    [7.297, 43.686], [7.31, 43.7], [7.33, 43.68],
+  ] as Pt[]
+).map(project);
+const coast = smooth(shore);
+const land = `${coast} L1000,0 L0,0 Z`;
+/** Points intermédiaires de la courbe du rivage : des décalages réguliers. */
+const densify = (pts: Pt[], steps = 4): Pt[] => {
+  const out: Pt[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [p0, p1, p2, p3] = [pts[i - 1] ?? pts[i], pts[i], pts[i + 1], pts[i + 2] ?? pts[i + 1]];
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      const at = (k: 0 | 1) =>
+        0.5 *
+        (2 * p1[k] +
+          (p2[k] - p0[k]) * t +
+          (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t * t +
+          (3 * p1[k] - p0[k] - 3 * p2[k] + p3[k]) * t * t * t);
+      out.push([at(0), at(1)]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+};
+
+/** Moyenne glissante : adoucit les décalages dans les creux du rivage. */
+const relax = (pts: Pt[], radius: number): Pt[] =>
+  pts.map((_, i) => {
+    const window = pts.slice(Math.max(0, i - radius), i + radius + 1);
+    return [0, 1].map((k) => window.reduce((sum, p) => sum + p[k], 0) / window.length) as Pt;
+  });
+
+// Lignes de sonde : le rivage répété vers le large, de plus en plus espacé (repère marin, sans cote).
+const soundings = [26, 60, 104].map((d) => smooth(relax(offset(densify(shore), d), 3)));
+
+// Cadre et graticule toutes les 3′ (0,05°).
+const VIEW = { x: 110, y: 80, w: 830, h: 860 };
+const meridians = [7.1, 7.15, 7.2, 7.25, 7.3].map((lon) => ({ x: project([lon, LAT0])[0], label: `${dm(lon)}E` }));
+const parallels = [43.55, 43.6, 43.65, 43.7].map((lat) => ({ y: project([LON0, lat])[1], label: `${dm(lat)}N` }));
+const scale = { x: VIEW.x + VIEW.w - 60 - 5 * KM, y: VIEW.y + VIEW.h - 46 };
+
+// Tournée : elle relie les communes du nord-est au sud-ouest, la zone couverte en halo autour. Le point
+// de la tournée y entre par la route du littoral, depuis le bord est de la carte (le halo, lui, s'en tient
+// aux communes).
+const byName = new Map(towns.map((t) => [t.name, project([t.lon, t.lat])]));
+const tour = [
+  byName.get('Nice'),
+  project([7.22, 43.672]),
+  project([7.19, 43.668]),
+  byName.get('Cagnes-sur-Mer'),
+  byName.get('Villeneuve-Loubet'),
+  project([7.118, 43.63]),
+  project([7.12, 43.603]),
+  byName.get('Antibes'),
+].filter((p): p is Pt => Boolean(p));
+const EDGE = project([7.31, 43.705]);
+const reach = smooth(tour);
+const route = smooth([EDGE, ...tour]);
+const townsText = towns.map((t) => t.name).join(', ');
+
+// Étiquettes : nom et coordonnées. Nice à gauche (bord de carte), Villeneuve-Loubet dessous (trop proche de Cagnes).
+const LEFT = new Set(['Nice']);
+const BELOW = new Set(['Villeneuve-Loubet']);
+const pins = towns.map((t) => {
+  const [x, y] = project([t.lon, t.lat]);
+  const left = LEFT.has(t.name);
+  const below = BELOW.has(t.name);
+  return {
+    name: t.name,
+    coords: `${dm(t.lat)}N · ${dm(t.lon)}E`,
+    x,
+    y,
+    lx: below ? x - 8 : left ? x - 24 : x + 24,
+    side: below ? 'below' : left ? 'left' : 'right',
+    anchor: left ? 'end' : 'start',
+    dy: below ? '2.1em' : '-0.3em',
+  };
+});
+---
+
+<section class="zone" id="zone" aria-labelledby="zone-title">
+  <div class="wrap zone__grid">
+    <div class="zone__head">
+      <p class="label zone__kicker">Zone d’intervention</p>
+      <h2 class="zone__title" id="zone-title">Où est garé votre véhicule&nbsp;?</h2>
+    </div>
+
+    <figure class="zone__map">
+      <svg viewBox={`${VIEW.x} ${VIEW.y} ${VIEW.w} ${VIEW.h}`} role="img" aria-labelledby="zone-map-title">
+        <title id="zone-map-title">
+          Carte schématique du littoral entre Antibes et Nice, avec {towns.map((t) => t.name).join(', ')}.
+        </title>
+        <defs>
+          <radialGradient id="zone-fade-gradient" cx="50%" cy="48%" r="62%">
+            <stop offset="58%" stop-color="#fff"></stop>
+            <stop offset="100%" stop-color="#000"></stop>
+          </radialGradient>
+          <mask id="zone-fade" maskUnits="userSpaceOnUse" x={VIEW.x} y={VIEW.y} width={VIEW.w} height={VIEW.h}>
+            <rect x={VIEW.x} y={VIEW.y} width={VIEW.w} height={VIEW.h} fill="url(#zone-fade-gradient)"></rect>
+          </mask>
+          <filter id="zone-soft" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="30"></feGaussianBlur>
+          </filter>
+        </defs>
+
+        <g mask="url(#zone-fade)">
+          <path class="zone__land" d={land}></path>
+          <g class="zone__graticule">
+            {meridians.map((m) => <path d={`M${f(m.x)},${VIEW.y} V${VIEW.y + VIEW.h}`} />)}
+            {parallels.map((p) => <path d={`M${VIEW.x},${f(p.y)} H${VIEW.x + VIEW.w}`} />)}
+          </g>
+          {soundings.map((d, i) => <path class="zone__sounding" d={d} style={`--depth: ${i}`} />)}
+          <path class="zone__reach" d={reach} filter="url(#zone-soft)"></path>
+          <path class="zone__coast" d={coast}></path>
+        </g>
+
+        <g class="zone__degrees" aria-hidden="true">
+          {meridians.map((m) => <text x={f(m.x + 6)} y={VIEW.y + 24}>{m.label}</text>)}
+          {parallels.map((p) => <text x={VIEW.x + 8} y={f(p.y - 8)}>{p.label}</text>)}
+        </g>
+        <text class="zone__water zone__water--sea" x="600" y="772">Méditerranée</text>
+        <text class="zone__water zone__water--bay" x="640" y="446">Baie des Anges</text>
+
+        <path class="zone__route" d={route} pathLength="1" data-route></path>
+
+        {
+          pins.map((p) => (
+            <g class="zone__pin" data-pin={p.name}>
+              <g class="zone__mark">
+                <circle cx={f(p.x)} cy={f(p.y)} r="15" class="zone__halo" />
+                <circle cx={f(p.x)} cy={f(p.y)} r="5.5" class="zone__dot" />
+              </g>
+              <text x={f(p.lx)} y={f(p.y)} text-anchor={p.anchor} data-side={p.side}>
+                <tspan class="zone__name" dy={p.dy}>
+                  {p.name}
+                </tspan>
+                <tspan class="zone__coords" x={f(p.lx)} dy="1.5em">
+                  {p.coords}
+                </tspan>
+                <!-- Commune choisie : « Votre véhicule » à la place des coordonnées (même place, sans collision). -->
+                <tspan class="zone__yours" x={f(p.lx)} dy="0">Votre véhicule</tspan>
+              </text>
+            </g>
+          ))
+        }
+
+        <!-- Votre véhicule : posé sur la commune choisie ; la tournée vient jusqu'au bord du cercle. -->
+        <g class="zone__here" data-here aria-hidden="true">
+          <circle class="zone__here-ring" r="30"></circle>
+          <circle class="zone__here-dot" r="10"></circle>
+        </g>
+        <!-- Le point de la tournée : au-dessus de tout, jusqu'au véhicule. -->
+        <circle class="zone__van" r="9" cx={f(EDGE[0])} cy={f(EDGE[1])} data-van></circle>
+
+        <g class="zone__north" transform="translate(250 205)" aria-hidden="true">
+          <path d="M0,32 V-6"></path>
+          <path class="zone__north-head" d="M-6,4 L0,-10 L6,4 Z"></path>
+          <text y="-22" text-anchor="middle">N</text>
+        </g>
+        <g class="zone__scale" transform={`translate(${f(scale.x)} ${f(scale.y)})`} aria-hidden="true">
+          <path d={`M0,0 H${f(5 * KM)}`}></path>
+          {[0, 1, 2, 3, 4, 5].map((k) => <path d={`M${f(k * KM)},0 V${k % 5 ? -6 : -12}`} />)}
+          <text x="0" y="-22">0</text>
+          <text x={f(5 * KM)} y="-22" text-anchor="end">5 km</text>
+        </g>
+      </svg>
+      <figcaption class="label">Carte schématique — {zone.area.value}</figcaption>
+    </figure>
+
+    <div class="zone__body">
+      <!-- Les choix n'existent qu'avec le script (la carte répond) ; sans lui, la liste des communes ci-dessous. -->
+      <div class="zone__towns" role="group" aria-labelledby="zone-title" data-towns hidden>
+        {
+          pins.map((p) => (
+            <button type="button" class="zone__town" data-town={p.name} data-x={f(p.x)} data-y={f(p.y)} aria-pressed="false">
+              {p.name}
+            </button>
+          ))
+        }
+      </div>
+      <p class="zone__answer" data-answer aria-live="polite">
+        {townsText} {zone.surroundings.value}, dans les {zone.area.value}.
+      </p>
+      <p class="zone__note">
+        Vous êtes ailleurs dans le 06&nbsp;? Appelez&nbsp;: on vous dit si l’intervention est possible chez vous.
+      </p>
+      <a class="btn btn--primary zone__cta" href={phone.href}>
+        Appeler<span class="btn__sep" aria-hidden="true"></span>{phone.display}
+      </a>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { zone } from '../content/site';
+
+  // La carte répond à « où est garé votre véhicule ? » : le véhicule est posé sur la commune choisie ;
+  // le point de la tournée entre par la route du littoral et s'arrête auprès de lui ; la demande (plus
+  // bas) est préparée pour cette commune (événement meca:town). Sans choix, à l'entrée de la carte, la
+  // tournée parcourt la zone. Un trajet choisi hors écran (sur mobile, les choix sont sous la carte) se
+  // joue quand la carte apparaît. Sans script : tracé fixe et liste des communes ; mouvement réduit :
+  // mêmes états d'arrivée, sans trajet.
+  const route = document.querySelector<SVGPathElement>('[data-route]');
+  const van = document.querySelector<SVGCircleElement>('[data-van]');
+  const here = document.querySelector<SVGGElement>('[data-here]');
+  const answer = document.querySelector<HTMLElement>('[data-answer]');
+  const choices = document.querySelector<HTMLElement>('[data-towns]');
+  const buttons = choices ? [...choices.querySelectorAll<HTMLButtonElement>('[data-town]')] : [];
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** Rayon du repère « Votre véhicule » : le point de la tournée s'arrête à son bord. */
+  const DOOR = 30;
+
+  if (route && van) {
+    const total = route.getTotalLength();
+    /** Longueur du tracé au plus près d'un point de la carte. */
+    const nearest = (x: number, y: number) => {
+      let best = 0;
+      let gap = Infinity;
+      for (let k = 0; k <= 240; k++) {
+        const length = (total * k) / 240;
+        const point = route.getPointAtLength(length);
+        const d = (point.x - x) ** 2 + (point.y - y) ** 2;
+        if (d < gap) {
+          gap = d;
+          best = length;
+        }
+      }
+      return best;
+    };
+    /** Le point de la tournée à une longueur du tracé, et le trait dessiné jusque-là. */
+    const place = (length: number) => {
+      const point = route.getPointAtLength(length);
+      route.style.strokeDashoffset = String(1 - length / total);
+      van.setAttribute('cx', point.x.toFixed(1));
+      van.setAttribute('cy', point.y.toFixed(1));
+    };
+    const ease = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (2 - 2 * t) ** 3 / 2);
+    let run = 0;
+    /** Parcourt le tracé jusqu'à `to` ; `stay` : le point reste à l'arrivée, auprès du véhicule. */
+    const drive = (to: number, stay: boolean) => {
+      const token = ++run;
+      route.classList.add('is-drawn');
+      van.classList.add('is-on');
+      if (still) {
+        place(to);
+        van.classList.toggle('is-on', stay);
+        return;
+      }
+      const duration = 900 + 1500 * (to / total);
+      const start = performance.now();
+      const step = (now: number) => {
+        if (token !== run) return;
+        const t = Math.min((now - start) / duration, 1);
+        place(ease(t) * to);
+        if (t < 1) requestAnimationFrame(step);
+        else if (!stay) van.classList.remove('is-on');
+      };
+      requestAnimationFrame(step);
+    };
+
+    let visible = false;
+    let toured = false;
+    let pending: number | null = null;
+    if (!still) route.classList.add('is-armed');
+    new IntersectionObserver(
+      ([entry]) => {
+        visible = entry.isIntersecting;
+        if (!visible) return;
+        if (pending !== null) drive(pending, true);
+        else if (!toured && !here?.classList.contains('is-set')) drive(total, false);
+        pending = null;
+        toured = true;
+      },
+      { threshold: 0.35 },
+    ).observe(route.closest('figure') ?? route);
+
+    // Les communes deviennent des choix : sous eux, seulement ce que la liste ne dit pas.
+    choices?.removeAttribute('hidden');
+    const around = zone.surroundings.value;
+    if (answer) answer.textContent = `${around.charAt(0).toUpperCase()}${around.slice(1)}, dans les ${zone.area.value}.`;
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        const town = button.dataset.town ?? '';
+        const x = Number(button.dataset.x);
+        const y = Number(button.dataset.y);
+        for (const b of buttons) b.setAttribute('aria-pressed', String(b === button));
+        for (const pin of document.querySelectorAll<SVGGElement>('[data-pin]')) pin.classList.toggle('is-here', pin.dataset.pin === town);
+        here?.setAttribute('transform', `translate(${x} ${y})`);
+        here?.classList.add('is-set');
+        const to = Math.max(nearest(x, y) - DOOR, 0);
+        if (visible || still) drive(to, true);
+        else pending = to;
+        if (answer) {
+          const name = document.createElement('strong');
+          name.textContent = town;
+          const link = document.createElement('a');
+          link.href = '#demande';
+          link.textContent = 'Demander une intervention';
+          answer.replaceChildren('On vient à ', name, '. ', link);
+        }
+        dispatchEvent(new CustomEvent('meca:town', { detail: town }));
+      });
+    }
+  }
+</script>
+
+<style>
+  .zone {
+    padding-block: clamp(6rem, 12vw, 10rem);
+    /* Nuit sur la baie : une lueur froide et basse, du côté de la mer. */
+    background: radial-gradient(52% 58% at 78% 60%, rgb(36 85 255 / 0.07), transparent 72%);
+  }
+
+  /* Desktop : la question et les choix à gauche, centrés face à la carte. Mobile : question, carte, choix
+     — la carte reste à l'écran quand on choisit. */
+  .zone__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    grid-template-rows: 1fr auto auto 1fr;
+    grid-template-areas: '. map' 'head map' 'body map' '. map';
+    column-gap: clamp(2.5rem, 6vw, 6rem);
+  }
+
+  .zone__head {
+    grid-area: head;
+  }
+
+  .zone__map {
+    grid-area: map;
+    align-self: center;
+  }
+
+  .zone__body {
+    grid-area: body;
+  }
+
+  .zone__kicker {
+    color: var(--blue-soft);
+  }
+
+  .zone__title {
+    margin-top: 1.25rem;
+    font-stretch: var(--wide);
+    font-weight: 800;
+    font-size: clamp(1.75rem, 3vw, 2.75rem);
+    line-height: 0.98;
+    letter-spacing: -0.015em;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+
+  /* Communes : des choix — chasse normale et sans césure, pour ne jamais couper « Cagnes-sur-Mer ». */
+  .zone__towns {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+    margin-top: 1.75rem;
+  }
+
+  .zone__towns[hidden] {
+    display: none;
+  }
+
+  .zone__town {
+    position: relative;
+    min-height: 2.75rem;
+    padding: 0.25rem 0 0.25rem 1.75rem;
+    border: 0;
+    background: none;
+    color: var(--text-2);
+    font-weight: 800;
+    font-size: clamp(1.25rem, 2.1vw, 1.875rem);
+    line-height: 1.05;
+    letter-spacing: -0.005em;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+
+  .zone__town::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 0.75rem;
+    height: 0.75rem;
+    margin-top: -0.375rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    transition:
+      background-color 0.2s,
+      border-color 0.2s;
+  }
+
+  .zone__town:hover,
+  .zone__town[aria-pressed='true'] {
+    color: var(--text);
+  }
+
+  .zone__town[aria-pressed='true']::before {
+    background: var(--blue-soft);
+    border-color: var(--blue-soft);
+  }
+
+  .zone__answer {
+    margin-top: 1.25rem;
+    font-size: 1.125rem;
+    color: var(--text-2);
+  }
+
+  .zone__answer :global(strong) {
+    color: var(--text);
+  }
+
+  .zone__answer :global(a) {
+    margin-left: 0.25rem;
+    color: var(--blue-soft);
+    border-bottom: 1px solid currentColor;
+  }
+
+  .zone__note {
+    max-width: 26rem;
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+    color: var(--text-2);
+  }
+
+  .zone__cta {
+    margin-top: 1.75rem;
+  }
+
+  .zone__map svg {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* — Fond de carte ——————————————————————————— */
+
+  .zone__land {
+    fill: var(--ink-2);
+  }
+
+  .zone__graticule path {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .zone__sounding {
+    fill: none;
+    stroke: var(--blue-soft);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+    opacity: calc(0.34 - var(--depth) * 0.07);
+  }
+
+  .zone__coast {
+    fill: none;
+    stroke: var(--text-2);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+
+  /* Zone couverte : la tournée et ses alentours, en halo. */
+  .zone__reach {
+    fill: none;
+    stroke: var(--blue);
+    stroke-width: 120;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.12;
+  }
+
+  .zone__degrees text {
+    fill: var(--text-3);
+    font-size: 13px;
+    letter-spacing: 0.06em;
+  }
+
+  .zone__water {
+    fill: var(--blue-soft);
+    font-style: italic;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+
+  .zone__water--sea {
+    font-size: 19px;
+  }
+
+  .zone__water--bay {
+    font-size: 14px;
+  }
+
+  /* — Tournée ——————————————————————————————— */
+
+  .zone__route {
+    fill: none;
+    stroke: var(--blue-soft);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+    transition: opacity 0.2s;
+  }
+
+  /* Tracé animé (script) : masqué jusqu'à l'entrée de la carte, puis dessiné. */
+  .zone__route:global(.is-armed) {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+
+  .zone__route:global(.is-armed.is-drawn) {
+    opacity: 1;
+  }
+
+  .zone__van {
+    fill: var(--paper);
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+
+  .zone__van:global(.is-on) {
+    opacity: 1;
+  }
+
+  /* — Communes ——————————————————————————————— */
+
+  .zone__mark {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  .zone__halo {
+    fill: var(--ink);
+    stroke: var(--blue-soft);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .zone__dot {
+    fill: var(--paper);
+  }
+
+  .zone__pin text {
+    paint-order: stroke;
+    stroke: var(--ink);
+    stroke-width: 6px;
+    stroke-linejoin: round;
+  }
+
+  /* Commune choisie : l'étiquette s'écarte du cercle « Votre véhicule » et du point arrivé à son bord. */
+  .zone__pin:global(.is-here) [data-side='right'] {
+    transform: translateX(20px);
+  }
+
+  .zone__pin:global(.is-here) [data-side='left'] {
+    transform: translateX(-20px);
+  }
+
+  .zone__pin:global(.is-here) [data-side='below'] {
+    transform: translateY(14px);
+  }
+
+  .zone__name {
+    fill: var(--text);
+    font-stretch: var(--semi);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .zone__coords {
+    fill: var(--text-3);
+    font-size: 15px;
+    letter-spacing: 0.04em;
+  }
+
+  /* — Votre véhicule ————————————————————————— */
+
+  .zone__here {
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+
+  .zone__here:global(.is-set) {
+    opacity: 1;
+  }
+
+  .zone__here-ring {
+    fill: none;
+    stroke: var(--blue-soft);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .zone__here-dot {
+    fill: var(--blue-soft);
+  }
+
+  .zone__yours {
+    visibility: hidden;
+    fill: var(--blue-soft);
+    font-stretch: var(--semi);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .zone__pin:global(.is-here) .zone__coords {
+    visibility: hidden;
+  }
+
+  .zone__pin:global(.is-here) .zone__yours {
+    visibility: visible;
+  }
+
+  /* — Repères ——————————————————————————————— */
+
+  .zone__north path,
+  .zone__scale path {
+    fill: none;
+    stroke: var(--text-3);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .zone__north .zone__north-head {
+    fill: var(--text-3);
+  }
+
+  .zone__north text,
+  .zone__scale text {
+    fill: var(--text-3);
+    font-stretch: var(--semi);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+  }
+
+  .zone__map figcaption {
+    margin-top: 1rem;
+    color: var(--text-3);
+  }
+
+  @media (max-width: 899px) {
+    .zone__grid {
+      grid-template-columns: 1fr;
+      grid-template-rows: none;
+      grid-template-areas: 'head' 'map' 'body';
+      row-gap: 2rem;
+    }
+
+    .zone__towns {
+      margin-top: 0;
+    }
+  }
+
+  /* Mobile : la carte se lit en 350 px — textes et repères agrandis, graticule allégé. */
+  @media (max-width: 599px) {
+    .zone {
+      padding-block: 4.5rem 3.5rem;
+    }
+
+    .zone__title {
+      font-size: 7.4vw;
+    }
+
+    .zone__town {
+      font-size: 6.2vw;
+    }
+
+    .zone__name {
+      font-size: 38px;
+    }
+
+    .zone__coords,
+    .zone__yours {
+      font-size: 26px;
+    }
+
+    .zone__degrees {
+      display: none;
+    }
+
+    .zone__water--sea {
+      font-size: 30px;
+    }
+
+    .zone__water--bay {
+      font-size: 22px;
+    }
+
+    .zone__north text,
+    .zone__scale text {
+      font-size: 24px;
+    }
+
+    .zone__route {
+      stroke-width: 6;
+    }
+
+    .zone__mark {
+      transform: scale(1.5);
+    }
+  }
+
+</style>

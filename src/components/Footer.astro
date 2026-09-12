@@ -1,0 +1,127 @@
+---
+import { brand, contact, credits, zone } from '../content/site';
+import Mark from './Mark.astro';
+
+const phones = contact.phones.value;
+const year = new Date().getFullYear();
+---
+
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer__top">
+      <a class="footer__brand" href="/" aria-label="MECA RIVIERA — accueil">
+        <Mark class="footer__mark" />
+        <span>{brand.name.value}</span>
+      </a>
+      <p class="footer__line">{brand.activity.value} — {zone.area.value}</p>
+      <ul class="footer__phones">
+        {
+          phones.map((p) => (
+            <li>
+              <a href={p.href}>{p.display}</a>
+            </li>
+          ))
+        }
+        {
+          contact.snapchat.value && (
+            <li>
+              <a href={`https://www.snapchat.com/add/${contact.snapchat.value}`} rel="noopener" target="_blank">
+                Snapchat
+              </a>
+            </li>
+          )
+        }
+      </ul>
+    </div>
+
+    <div class="footer__credits">
+      <p class="label">Crédits 3D</p>
+      <ul>
+        {
+          credits.map((c) => (
+            <li>
+              «&nbsp;{c.title}&nbsp;» — {c.author}, licence {c.license}
+            </li>
+          ))
+        }
+      </ul>
+      <p>
+        Modèles modifiés (optimisation, matériaux, logos masqués). Les véhicules représentés sont des illustrations&nbsp;: MECA
+        RIVIERA n’est affiliée à aucun constructeur.
+      </p>
+    </div>
+
+    <p class="footer__bottom label">© {year} {brand.name.value} · Site en pré-lancement</p>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    padding-block: clamp(4rem, 8vw, 6rem) calc(2rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: var(--ink-2);
+  }
+
+  .footer__top {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1.5rem 3rem;
+    align-items: baseline;
+    padding-bottom: 2.5rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .footer__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-stretch: var(--wide);
+    font-weight: 800;
+    letter-spacing: 0.03em;
+  }
+
+  .footer__brand :global(.footer__mark) {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+
+  .footer__line {
+    color: var(--text-2);
+  }
+
+  .footer__phones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    font-weight: 600;
+  }
+
+  .footer__phones a:hover {
+    color: var(--blue-soft);
+  }
+
+  .footer__credits {
+    display: grid;
+    gap: 0.75rem;
+    max-width: 52rem;
+    padding-block: 2.5rem;
+    font-size: 0.8125rem;
+    color: var(--text-3);
+  }
+
+  .footer__bottom {
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+    color: var(--text-3);
+  }
+
+  @media (max-width: 899px) {
+    .footer__top {
+      grid-template-columns: 1fr;
+    }
+
+    .footer {
+      padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    }
+  }
+</style>

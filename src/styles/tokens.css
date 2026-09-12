@@ -1,0 +1,31 @@
+:root {
+  /* Couleur — noir de nuit, blanc cassé, bleu électrique signature, rouge fonctionnel (voyant). */
+  --ink: #0b0c0e;
+  --ink-2: #111317;
+  --ink-3: #191c22;
+  --paper: #f2f1ee;
+  --paper-2: #e4e2dc;
+  --text: #f2f1ee;
+  --text-2: rgb(242 241 238 / 0.68);
+  --text-3: rgb(242 241 238 / 0.58); /* ≥ 4,5:1 sur --ink comme sur la zone éclairée du sol */
+  --line: rgb(242 241 238 / 0.13);
+  --line-strong: rgb(242 241 238 / 0.3);
+  --blue: #2455ff;
+  --blue-soft: #86a6ff;
+  --red: #e5221b;
+
+  /* Typographie — Archivo variable (graisse 100–900, chasse 62–125 %). */
+  --font: 'Archivo Variable', 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  --wide: 125%;
+  --semi: 87.5%;
+  --cond: 75%;
+
+  /* Espace */
+  --gutter: clamp(1.25rem, 4vw, 4rem);
+  --max: 90rem;
+  --header-h: 4.5rem;
+
+  /* Mouvement */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
