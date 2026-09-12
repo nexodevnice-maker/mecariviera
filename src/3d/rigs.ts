@@ -44,6 +44,14 @@ const EASE = {
 /** Rythme par défaut : palier de lecture, déplacement adouci. */
 export const DEFAULT_PACE: Pace = { window: [0.18, 0.82] };
 
+/**
+ * Téléphone, pas guidés (motion/guide.ts) : chaque geste mène d'un arrêt au suivant et la lecture se fait à
+ * l'arrêt — le mouvement occupe tout le pas, avec la même courbe.
+ */
+export function guidedPace(pace?: Pace): Pace {
+  return { window: [0.04, 0.96], ease: pace?.ease };
+}
+
 /** Avancement (0–1) de la caméra dans un segment de scroll, selon le rythme du cadrage visé. */
 export function paced(fraction: number, pace: Pace = DEFAULT_PACE) {
   const [a, b] = pace.window;

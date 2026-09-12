@@ -74,11 +74,13 @@ const phone = contact.phones.value[0];
     padding-inline: var(--gutter);
   }
 
+  /* Cibles tactiles de 44 px au moins (marge verticale : l'en-tête en a la place). */
   .brand {
     display: inline-flex;
     align-items: center;
     gap: 0.75rem;
     flex: none;
+    padding-block: 0.6875rem;
   }
 
   .brand :global(.brand__mark) {
@@ -120,6 +122,7 @@ const phone = contact.phones.value[0];
     display: inline-flex;
     align-items: baseline;
     gap: 0.625rem;
+    padding-block: 0.75rem;
   }
 
   .header-phone .label {

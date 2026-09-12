@@ -19,9 +19,13 @@ export function bootStage(root: HTMLElement | null) {
 
   // Légendes mobiles (le texte ne passe jamais sur la scène) : pilotées par le scroll, avec ou sans 3D.
   const narrow = matchMedia('(max-width: 899px)');
-  const progress = createStageProgress(stops, narrow);
+  const progress = createStageProgress(stops, narrow, canvas.parentElement);
   const rig = RIGS.c63;
-  mountCaptions(root, stops, progress, narrow, stops.map((el) => rig[el.dataset.stop as StopKey]?.pace), { firstUntil: 0.12 });
+  // L'extinction a son pas (téléphone) : phares éteints, la nuit qui gagne la voiture, juste avant le noir.
+  mountCaptions(root, stops, progress, narrow, stops.map((el) => rig[el.dataset.stop as StopKey]?.pace), {
+    firstUntil: 0.12,
+    quiet: 0.78,
+  });
 
   const fallback = () => {
     root.classList.add('is-static');

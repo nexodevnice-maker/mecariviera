@@ -175,6 +175,7 @@ const pins = towns.map((t) => {
         {
           pins.map((p) => (
             <g class="zone__pin" data-pin={p.name}>
+              <circle cx={f(p.x)} cy={f(p.y)} r="48" class="zone__hit" />
               <g class="zone__mark">
                 <circle cx={f(p.x)} cy={f(p.y)} r="15" class="zone__halo" />
                 <circle cx={f(p.x)} cy={f(p.y)} r="5.5" class="zone__dot" />
@@ -350,6 +351,13 @@ const pins = towns.map((t) => {
         dispatchEvent(new CustomEvent('meca:town', { detail: town }));
       });
     }
+
+    // Sur la carte aussi, toucher une commune la choisit (les boutons restent le chemin du clavier et des
+    // lecteurs d'écran).
+    for (const pin of document.querySelectorAll<SVGGElement>('[data-pin]')) {
+      pin.addEventListener('click', () => buttons.find((b) => b.dataset.town === pin.dataset.pin)?.click());
+    }
+    route.closest('figure')?.classList.add('is-live');
   }
 </script>
 
@@ -585,6 +593,32 @@ const pins = towns.map((t) => {
   .zone__mark {
     transform-box: fill-box;
     transform-origin: center;
+  }
+
+  /* Cible tactile d'une commune sur la carte (invisible) : active avec le script seulement. */
+  .zone__hit {
+    fill: transparent;
+    pointer-events: none;
+  }
+
+  .zone__map:global(.is-live) .zone__hit {
+    pointer-events: all;
+  }
+
+  .zone__map:global(.is-live) .zone__pin {
+    cursor: pointer;
+  }
+
+  /* Tracé, point de la tournée et repère « Votre véhicule » passent au-dessus des communes : le doigt les
+     traverse jusqu'à la commune. */
+  .zone__route,
+  .zone__van,
+  .zone__here {
+    pointer-events: none;
+  }
+
+  .zone__town:active {
+    color: var(--text);
   }
 
   .zone__halo {

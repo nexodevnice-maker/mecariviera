@@ -62,6 +62,8 @@ for (const { name, ...options } of wanted('inspection') ? targets : []) {
   const context = await browser.newContext(options);
   const page = await context.newPage();
   await page.goto(`${url}?vehicle=c63`, { waitUntil: 'load' });
+  // Pas guidés (téléphone tactile) neutralisés : le défilement va exactement au point focal demandé.
+  await page.addStyleTag({ content: 'html{scroll-snap-type:none!important}' });
   // Arrêt « capot » (le compartiment relevé et éclairé) au point focal, même calcul que
   // src/motion/stage-progress.ts : c'est le repli sans 3D, l'ouverture 3D étant noire.
   const top = await page.$$eval('[data-inspection] [data-stop]', (els) => {

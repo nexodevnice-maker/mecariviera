@@ -98,7 +98,7 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
         if (!entries.some((e) => e.isIntersecting)) return;
         observer.disconnect();
         // Arrêts mesurés à l'approche seulement : aucune mise en page forcée au chargement de la page.
-        const progress = createStageProgress(stops, narrow);
+        const progress = createStageProgress(stops, narrow, root.querySelector<HTMLElement>('.method__viewport'));
         // Le titre reste pendant la première moitié du balayage, puis chaque pièce a sa légende.
         const paces = stops.map((el) => INSPECTION_PACES[el.dataset.stop ?? '']);
         mountCaptions(root, stops, progress, narrow, paces, { firstUntil: 0.35 });
@@ -348,15 +348,23 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
 
     /* — Avec légendes (script) : comme la scène d'ouverture — les arrêts deviennent des longueurs de scroll,
        le texte une légende en bas de l'écran, visible quand la caméra est arrivée, jamais sur le relevé. */
+    /* Longueurs resserrées (× 0,8), comme la scène d'ouverture : un pas par geste du pouce (guide.ts). */
     .method:global(.has-captions) .insp {
-      min-height: calc(var(--span, 100) * 1vh);
-      min-height: calc(var(--span, 100) * 1svh);
+      min-height: calc(var(--span, 100) * 0.8vh);
+      min-height: calc(var(--span, 100) * 0.8svh);
       padding: 0;
     }
 
     .method:global(.has-captions) .insp--intro {
-      min-height: 130vh;
-      min-height: 130svh;
+      min-height: 80vh;
+      min-height: 80svh;
+    }
+
+    /* Le temps d'arrêt final est déjà un pas : la vue reste épinglée le temps de la dernière phrase, et la
+       carte n'est qu'à un geste. */
+    .method:global(.has-captions) .insp__tail {
+      height: 16vh;
+      height: 16svh;
     }
 
     /* La dernière feuille (repli) avait une hauteur minimale : l'annuler sans rien d'autre (un sélecteur plus

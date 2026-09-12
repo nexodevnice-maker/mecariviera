@@ -49,6 +49,8 @@ for (const { name, ...options } of viewports) {
 
   // Véhicule fixé pour des captures reproductibles (le site en tire un au hasard) : QA_VEHICLE=rs3|m4, sinon c63.
   await page.goto(`${url}?vehicle=${process.env.QA_VEHICLE ?? 'c63'}`, { waitUntil: 'load' });
+  // Pas guidés (téléphone tactile) neutralisés : chaque capture au point focal exact de son arrêt.
+  await page.addStyleTag({ content: 'html{scroll-snap-type:none!important}' });
   const has3d = await page
     .waitForFunction(() => '__stage' in window, null, { timeout: 30000 })
     .then(() => true)

@@ -161,7 +161,21 @@ textarea {
   transition:
     background-color 0.2s var(--ease-out),
     color 0.2s var(--ease-out),
-    border-color 0.2s var(--ease-out);
+    border-color 0.2s var(--ease-out),
+    transform 0.15s var(--ease-out);
+}
+
+/* Sous le doigt : une pression franche. */
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn--primary:active {
+  background: #1a46e8;
+}
+
+.btn--ghost:active {
+  border-color: var(--paper);
 }
 
 .btn--primary {
@@ -195,6 +209,39 @@ textarea {
   height: 1.1em;
   background: currentColor;
   opacity: 0.4;
+}
+
+/* Toucher : ni flash gris du navigateur, ni délai de double tap. */
+a,
+button,
+label,
+select,
+summary {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Pas guidés (téléphone, voir src/motion/guide.ts) : dans les scènes 3D, un geste mène au plan suivant,
+   jamais plusieurs d'un élan ; défilement libre à partir de la carte. */
+html.is-guided {
+  scroll-snap-type: y mandatory;
+}
+
+.guide-point {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+html.is-guided .guide-point {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+html.is-guided #zone {
+  scroll-snap-align: start;
 }
 
 @media (prefers-reduced-motion: reduce) {

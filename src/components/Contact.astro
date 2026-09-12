@@ -307,8 +307,16 @@ const endpoint = import.meta.env.PUBLIC_FORM_ENDPOINT as string | undefined;
   }
 
   .contact__meta a {
+    position: relative;
     color: var(--blue-soft);
     border-bottom: 1px solid currentColor;
+  }
+
+  /* Lien en petites capitales : sa cible tactile déborde de 44 px, sans changer la mise en page. */
+  .contact__meta a::after {
+    content: '';
+    position: absolute;
+    inset: -1rem -0.5rem;
   }
 
   /* — Formulaire : champs soulignés, pas de boîtes ——————— */
@@ -419,7 +427,7 @@ const endpoint = import.meta.env.PUBLIC_FORM_ENDPOINT as string | undefined;
   .need span {
     display: inline-flex;
     align-items: center;
-    min-height: 2.5rem;
+    min-height: 2.75rem;
     padding: 0 0.875rem;
     border: 1px solid var(--line-strong);
     font-size: 0.875rem;
@@ -495,6 +503,11 @@ const endpoint = import.meta.env.PUBLIC_FORM_ENDPOINT as string | undefined;
   @media (max-width: 599px) {
     .form__row {
       grid-template-columns: 1fr;
+    }
+
+    /* L'envoi sur toute la largeur : à portée du pouce. */
+    .form__foot .btn {
+      flex: 1 1 100%;
     }
   }
 </style>

@@ -13,9 +13,11 @@ import {
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { createFollow } from '../motion/follow';
+import { guided } from '../motion/guide';
 import type { StageProgress } from '../motion/stage-progress';
 import { INSPECTION_PACES } from './inspection-paces';
-import { paced, type Pace, type Vec3 } from './rigs';
+import { guidedPace, paced, type Pace, type Vec3 } from './rigs';
 
 /**
  * Inspection 3D du scan réel (photogrammétrie d'une A1 capot ouvert), pilotée par le scroll.
@@ -334,7 +336,9 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     const i = Math.min(Math.floor(p), Math.max(last - 1, 0));
     // Chaque segment a son rythme : celui du cadrage visé. La ligne de scan, elle, avance à vitesse
     // constante pendant son segment — un balayage, pas un glissé.
-    const pace = shots[Math.min(i + 1, last)].pace;
+    const shotPace = shots[Math.min(i + 1, last)].pace;
+    // Téléphone, pas guidés : le mouvement occupe tout le pas (la lecture se fait à l'arrêt).
+    const pace = guided.matches ? guidedPace(shotPace) : shotPace;
     const t = paced(p - i, pace);
     const sweep = paced(p - i, { window: pace?.window ?? [0.18, 0.82], ease: 'linear' });
     const u = last > 0 ? (i + t) / last : 0;
@@ -408,6 +412,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   reduced.addEventListener('change', () => (dirty = true));
 
   let current = progress.read();
+  const follow = createFollow(narrow);
   at(current);
   await renderer.compileAsync(scene, camera);
 
@@ -417,6 +422,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     at(current);
     renderer.render(scene, camera);
     drawCallout(current);
+    progress.show(current);
   };
 
   const frame = (now: number) => {
@@ -431,8 +437,8 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
         current = snapped;
         changed = true;
       }
-    } else if (Math.abs(target - current) > 1e-4) {
-      current += (target - current) * (1 - Math.exp(-dt * 4.5));
+    } else if (follow.moving(current, target)) {
+      current = follow.step(current, target, dt);
       changed = true;
     }
     if (!changed) return;
@@ -454,6 +460,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   canvas.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
     stop();
+    progress.show(null);
     root.classList.remove('has-3d');
     root.classList.add('is-static');
   });

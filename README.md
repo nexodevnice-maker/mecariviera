@@ -43,7 +43,8 @@ src/
   components/            Header, Stage (hero + services), Method (inspection), Territory, Contact, Footer, MobileBar
   3d/                    hero : boot (chargement différé), stage, rigs (cadrages), studio (éclairage),
                          vehicles (tirage du véhicule) ; Méthode : inspection (scan A1)
-  motion/                progression du scroll à travers les arrêts
+  motion/                progression du scroll à travers les arrêts, légendes mobiles, pas guidés
+                         (téléphone : un geste, un plan) et suivi de la caméra (ressort)
   styles/                tokens (couleurs, typo, espaces) et base
 scripts/                 pipeline d'assets et outils de QA
 public/3d, public/media  dérivés optimisés (versionnés)

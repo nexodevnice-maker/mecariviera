@@ -60,9 +60,15 @@ const year = new Date().getFullYear();
     border-bottom: 1px solid var(--line);
   }
 
-  .footer__brand {
+  /* Cibles tactiles de 44 px au moins. */
+  .footer__brand,
+  .footer__phones a {
     display: inline-flex;
     align-items: center;
+    min-height: 2.75rem;
+  }
+
+  .footer__brand {
     gap: 0.75rem;
     font-stretch: var(--wide);
     font-weight: 800;

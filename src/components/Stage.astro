@@ -501,13 +501,19 @@ const SPAN: Record<CarZone, number> = { front: 80, engine: 110, wheel: 110, cock
     /* — Avec légendes (script) : les arrêts deviennent des longueurs de scroll ; leur texte, une légende posée
        en bas de l'écran, au-dessus de la barre d'appel, sur un fondu de nuit — visible quand la caméra est
        arrivée, jamais sur la scène. Sans script, les feuilles ci-dessus restent le repli. */
+    /* Longueurs resserrées (× 0,8) : sur téléphone, chaque pas tient dans un geste du pouce (guide.ts). */
     .stage:global(.has-captions) .hero,
     .stage:global(.has-captions) .overview,
     .stage:global(.has-captions) .stop {
       display: block;
-      min-height: calc(var(--span, 100) * 1vh);
-      min-height: calc(var(--span, 100) * 1svh);
+      min-height: calc(var(--span, 100) * 0.8vh);
+      min-height: calc(var(--span, 100) * 0.8svh);
       padding: 0;
+    }
+
+    .stage:global(.has-captions) .hero {
+      min-height: 100vh;
+      min-height: 100svh;
     }
 
     .stage:global(.has-captions) [data-caption] {

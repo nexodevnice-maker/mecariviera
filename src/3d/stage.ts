@@ -38,9 +38,11 @@ import {
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { createFollow } from '../motion/follow';
+import { guided } from '../motion/guide';
 import type { StageProgress } from '../motion/stage-progress';
 import { BAY, BAY_MOBILE, createBay, type BayPlacement } from './bay';
-import { paced, RIGS, type Framing, type Shot, type StopKey } from './rigs';
+import { guidedPace, paced, RIGS, type Framing, type Shot, type StopKey } from './rigs';
 import { STUDIO_ENV_SIGMA, STUDIO_PANELS } from './studio';
 import { vehicleById, type VehicleId } from './vehicles';
 
@@ -153,7 +155,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     const i = Math.min(Math.floor(p), Math.max(lastStop - 1, 0));
     // Chaque segment a son rythme : celui du cadrage visé (rigs.ts).
     const next = shots[Math.min(i + 1, lastStop)];
-    const t = paced(p - i, next.pace);
+    // Téléphone, pas guidés : le mouvement occupe tout le pas (la lecture se fait à l'arrêt).
+    const t = paced(p - i, guided.matches ? guidedPace(next.pace) : next.pace);
     const out = next.lightsOut;
     applyNight(out ? Math.min(Math.max((p - i - out[0]) / (out[1] - out[0]), 0), 1) : 0);
     const u = lastStop > 0 ? (i + t) / lastStop : 0;
@@ -271,6 +274,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     );
 
   let current = progress.read();
+  const follow = createFollow(narrow);
   cameraAt(current);
   // Compilation des shaders sans bloquer le fil principal (KHR_parallel_shader_compile).
   await renderer.compileAsync(scene, camera);
@@ -292,6 +296,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     renderer.render(scene, camera);
     drawCallout(current);
     drawBeacon(current);
+    progress.show(current);
   };
 
   const frame = (now: number) => {
@@ -307,8 +312,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
         current = snapped;
         changed = true;
       }
-    } else if (Math.abs(target - current) > 1e-4) {
-      current += (target - current) * (1 - Math.exp(-dt * 4.5));
+    } else if (follow.moving(current, target)) {
+      current = follow.step(current, target, dt);
       changed = true;
     }
     if (!introDone && entered) {
@@ -358,6 +363,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   canvas.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
     stop();
+    progress.show(null);
     root.classList.add('is-static');
   });
 
