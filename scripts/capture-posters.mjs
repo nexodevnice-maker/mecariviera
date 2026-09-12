@@ -48,7 +48,7 @@ for (const vehicle of wanted('stage') ? VEHICLES : []) {
     // Seule la scène : textes, en-tête, barre mobile et affiche existante masqués ; pas de fondu.
     await page.addStyleTag({
       content:
-        '.stage__content,.site-header,.mbar,.stage__callout{visibility:hidden!important}.stage__poster,.stage__viewport::after,body::after{display:none!important}.stage__canvas{transition:none!important;opacity:1!important}',
+        '.stage__content,.site-header,.mbar,.stage__callout{visibility:hidden!important}.stage__poster,.stage__viewport::after,body::after,.intro{display:none!important}.stage__canvas{transition:none!important;opacity:1!important}',
     });
     // La nuit avant l'arrivée des phares : la scène 3D reprend exactement là, puis joue l'arrivée.
     await page.evaluate(() => window.__stage.settle({ arrival: 0 }));
@@ -66,7 +66,7 @@ for (const { name, ...options } of wanted('inspection') ? targets : []) {
   // src/motion/stage-progress.ts : c'est le repli sans 3D, l'ouverture 3D étant noire.
   const top = await page.$$eval('[data-inspection] [data-stop]', (els) => {
     const el = els[1];
-    const focus = matchMedia('(max-width: 899px)').matches ? el.querySelector('[data-focus]') : null;
+    const focus = matchMedia('(max-width: 899px)').matches && !el.closest('.has-captions') ? el.querySelector('[data-focus]') : null;
     const r = (focus ?? el).getBoundingClientRect();
     return Math.round(r.top + scrollY + (focus ? 0 : r.height / 2) - innerHeight / 2);
   });
@@ -74,7 +74,7 @@ for (const { name, ...options } of wanted('inspection') ? targets : []) {
   await page.waitForFunction(() => '__inspection' in window, null, { timeout: 60000 });
   await page.addStyleTag({
     content:
-      '.method__content,.site-header,.mbar,.method__callout{visibility:hidden!important}.method__poster,.method__viewport::after,body::after{display:none!important}.method__canvas{transition:none!important;opacity:1!important}',
+      '.method__content,.site-header,.mbar,.method__callout{visibility:hidden!important}.method__poster,.method__viewport::after,body::after,.intro{display:none!important}.method__canvas{transition:none!important;opacity:1!important}',
   });
   await page.evaluate(() => window.__inspection.settle());
   await page.waitForTimeout(250);

@@ -39,6 +39,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import type { StageProgress } from '../motion/stage-progress';
+import { BAY, BAY_MOBILE, createBay, type BayPlacement } from './bay';
 import { paced, RIGS, type Framing, type Shot, type StopKey } from './rigs';
 import { STUDIO_ENV_SIGMA, STUDIO_PANELS } from './studio';
 import { vehicleById, type VehicleId } from './vehicles';
@@ -57,7 +58,7 @@ interface StageOptions {
   progress: StageProgress;
   narrow: MediaQueryList;
   vehicle: VehicleId;
-  assets: { model: Promise<ArrayBuffer>; environment: Promise<ArrayBuffer | null> };
+  assets: { model: Promise<ArrayBuffer>; environment: Promise<ArrayBuffer | null>; bay: Promise<ImageBitmap | null> };
 }
 
 const nextFrame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
@@ -91,7 +92,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   scene.environment = environment ? bakedStudio(environment) : studio(renderer);
   performance.mark('stage:env');
 
-  const camera = new PerspectiveCamera(30, 1, 0.1, 80);
+  // Plan lointain au-delà de la baie (photo à 55 m de l'origine, jusqu'à ~80 m de la caméra).
+  const camera = new PerspectiveCamera(30, 1, 0.1, 110);
 
   // Décodage de la géométrie compressée hors du fil principal.
   MeshoptDecoder.useWorkers?.(2);
@@ -99,7 +101,14 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const car = prepareCar(gltf.scene);
   const road = street();
   scene.add(car, contactShadow(car), road);
-  // Lumières de la côte, au loin (desktop ; sur mobile, l'horizon passe sous l'en-tête).
+  // Le lointain : la baie de Villefranche la nuit (photo) ; à défaut, des lumières de côte dessinées.
+  const bayImage = await assets.bay;
+  const backdrop = bayImage ? createBay(bayImage, Math.min(8, renderer.capabilities.getMaxAnisotropy())) : null;
+  if (backdrop) {
+    scene.add(backdrop.mesh);
+    // La route est une corniche : au-delà du bord de mer, plus de sol — la baie se voit en contrebas.
+    (road.material as ShaderMaterial).uniforms.uCut.value = -6.5;
+  }
   const lights = coastLights();
   scene.add(lights);
   performance.mark('stage:model');
@@ -183,6 +192,25 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     callout.style.opacity = strength.toFixed(3);
   };
 
+  // — Mobile : une petite lumière bleue pose le repère de la pièce du service (le trait de rappel reste au
+  // desktop) — même point du véhicule, visible quand la caméra est sur l'arrêt.
+  const beacon = root.querySelector<HTMLElement>('[data-beacon]');
+  const drawBeacon = (p: number) => {
+    if (!beacon) return;
+    const k = Math.round(p);
+    const point = anchors[keys[k]] ?? shots[k]?.anchor;
+    const strength = 1 - Math.min(Math.abs(p - k) / 0.2, 1);
+    if (!narrow.matches || !point || strength <= 0) {
+      beacon.style.opacity = '0';
+      return;
+    }
+    anchor.set(...point).project(camera);
+    const x = ((anchor.x + 1) / 2) * viewport.clientWidth;
+    const y = ((1 - anchor.y) / 2) * viewport.clientHeight;
+    beacon.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    beacon.style.opacity = strength.toFixed(3);
+  };
+
   // — Dimensions et qualité : la définition baisse d'un cran si les images ralentissent.
   const dprSteps = [narrow.matches ? 1.5 : 1.75, 1.25, 1, 0.75].map((v) => Math.min(window.devicePixelRatio, v));
   let dprLevel = 0;
@@ -197,7 +225,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     }
     renderer.setPixelRatio(dprSteps[dprLevel]);
     renderer.setSize(viewport.clientWidth, viewport.clientHeight, false);
-    lights.visible = !narrow.matches;
+    lights.visible = !backdrop && !narrow.matches;
+    backdrop?.place(narrow.matches ? BAY_MOBILE : BAY);
     (lights.material as ShaderMaterial).uniforms.uPixelRatio.value = renderer.getPixelRatio();
     const aspect = viewport.clientWidth / viewport.clientHeight;
     camera.aspect = aspect;
@@ -228,6 +257,18 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   let introStart = 0;
   let introDone = reduced.matches;
   applyIntro(introDone ? 1 : 0);
+  // L'entrée « MECA RIVIERA PRESENT » couvre la page jusqu'à la première image : l'arrivée attend qu'elle
+  // se lève (meca:enter) ; sans entrée, elle part à la première image.
+  let entered = !document.documentElement.classList.contains('has-intro');
+  if (!entered)
+    addEventListener(
+      'meca:enter',
+      () => {
+        entered = true;
+        dirty = true;
+      },
+      { once: true },
+    );
 
   let current = progress.read();
   cameraAt(current);
@@ -236,7 +277,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   performance.mark('stage:compiled', { detail: { programs: renderer.info.programs?.length } });
 
   // Envoi des textures au GPU une par image, plutôt qu'en un seul bloc au premier rendu.
-  for (const texture of collectTextures(scene, scene.environment)) {
+  for (const texture of collectTextures(scene, scene.environment, backdrop?.texture)) {
     renderer.initTexture(texture);
     await nextFrame();
   }
@@ -250,6 +291,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     cameraAt(current);
     renderer.render(scene, camera);
     drawCallout(current);
+    drawBeacon(current);
   };
 
   const frame = (now: number) => {
@@ -269,7 +311,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       current += (target - current) * (1 - Math.exp(-dt * 4.5));
       changed = true;
     }
-    if (!introDone) {
+    if (!introDone && entered) {
       introStart ||= now;
       const t = Math.min(Math.max(now - introStart - INTRO_DELAY_MS, 0) / INTRO_MS, 1);
       applyIntro(t);
@@ -289,6 +331,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
         detail: { programs: renderer.info.programs?.length, calls: renderer.info.render.calls },
       });
       canvas.classList.add('is-ready');
+      // La première scène existe : l'entrée peut se lever.
+      dispatchEvent(new CustomEvent('meca:scene-ready'));
     }
 
     if (dt > 1 / 24) slowFrames++;
@@ -323,6 +367,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     Object.assign(window, {
       __stage: {
         settle(options: { arrival?: number } = {}) {
+          dispatchEvent(new CustomEvent('meca:intro-finish'));
           current = progress.read();
           introDone = true;
           applyIntro(options.arrival ?? 1);
@@ -346,6 +391,32 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
           road.visible = true;
           render();
           return Number(ms.toFixed(1));
+        },
+        // Réglage de la baie (placement, découpe du sol au bord de mer) : captures comparatives.
+        bay(next: Partial<BayPlacement> & { cut?: number | null } = {}) {
+          const { cut, ...placement } = next;
+          if (cut !== undefined) (road.material as ShaderMaterial).uniforms.uCut.value = cut ?? -1000;
+          const state = backdrop?.place(placement) ?? null;
+          render();
+          // Contrôle : rangées de la photo (haut, lune, horizon, milieu, bas) dans la scène et à l'écran.
+          const rows: { v: number; world: number[]; screenY: number }[] = [];
+          if (backdrop) {
+            const { mesh } = backdrop;
+            mesh.updateMatrixWorld(true);
+            const h = (mesh.geometry as PlaneGeometry).parameters.height;
+            for (const v of [0, 0.11, 0.245, 0.5, 1]) {
+              const world = mesh.localToWorld(new Vector3(0, (0.5 - v) * h, 0));
+              const ndc = world.clone().project(camera);
+              rows.push({ v, world: world.toArray().map((n) => Number(n.toFixed(1))), screenY: Number(((1 - ndc.y) / 2).toFixed(3)) });
+            }
+          }
+          return {
+            ...state,
+            cut: (road.material as ShaderMaterial).uniforms.uCut.value,
+            scale: backdrop?.mesh.scale.toArray(),
+            rows,
+            camera: camera.position.toArray().map((n) => Number(n.toFixed(2))),
+          };
         },
         info() {
           return {
@@ -434,9 +505,9 @@ function prepareCar(model: Object3D) {
   return model;
 }
 
-function collectTextures(root: Object3D, extra?: Texture | null) {
+function collectTextures(root: Object3D, ...extra: (Texture | null | undefined)[]) {
   const textures = new Set<Texture>();
-  if (extra) textures.add(extra);
+  for (const texture of extra) if (texture) textures.add(texture);
   root.traverse((node) => {
     const mesh = node as Mesh;
     if (!mesh.isMesh || !mesh.visible) return;
@@ -457,6 +528,7 @@ const STREET_FRAGMENT = /* glsl */ `
 uniform vec3 uInk;
 uniform float uArrival;
 uniform float uHeadlights;
+uniform float uCut;
 uniform sampler2D uNoise;
 varying vec3 vWorld;
 
@@ -491,6 +563,8 @@ float beam(vec2 p, vec2 lamp) {
 
 void main() {
   vec2 p = vWorld.xz;
+  // Au-delà du bord de mer, plus de sol : le lointain (la baie) se voit en contrebas.
+  if (p.x < uCut) discard;
   // Matière : bitume (usure en grandes plages, reprises, granulat) à faible contraste, jamais une trame ;
   // trottoir plus fin et plus clair au-delà de la bordure.
   float pavement = smoothstep(KERB + 0.02, KERB - 0.02, p.x);
@@ -558,6 +632,7 @@ function street() {
       uInk: { value: new Color(INK) },
       uArrival: { value: 1 },
       uHeadlights: { value: 1 },
+      uCut: { value: -1000 },
       uNoise: { value: grainTexture() },
     },
     vertexShader: /* glsl */ `

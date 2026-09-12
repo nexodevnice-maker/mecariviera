@@ -73,27 +73,31 @@ export type StopKey = 'hero' | 'overview' | 'engine' | 'wheel' | 'front' | 'cock
  */
 export const RIGS: Record<'c63', Record<StopKey, Shot>> = {
   c63: {
-    // Arriver : depuis la route, à hauteur de conducteur ; la voiture garée au bord de la mer.
+    // Arriver : depuis la route, à hauteur de conducteur ; la voiture garée sur la corniche, la baie derrière.
+    // (Mobile : de plus loin, là où s'arrête le véhicule du mécanicien, debout sur la route — l'horizon descend,
+    // la lune et la baie tiennent au-dessus du toit, avec du ciel entre eux ; le texte dessous ; l'approche
+    // devient une marche.)
     hero: {
       position: [6.86, 1.38, 8.22],
       target: [0.1, 0.6, 0],
       shift: 0.28,
-      mobile: { position: [8.0, 2.0, 9.6], target: [0, 0.6, 0], shift: 0.26 },
+      mobile: { position: [14.08, 2.3, 16.9], target: [0, 0.6, 0], shift: 0.12 },
     },
     // S'approcher : à pied, dans l'axe des phares ; départ au premier pixel, arrivée longuement posée.
     overview: shot([3.7, 1.62, 4.6], [0.3, 0.75, 0.9], 0.25, { pace: { window: [0, 0.9], ease: 'out' } }),
     // Face avant : un pas de côté, devant la calandre.
     front: shot([1.2, 1.5, 5.6], [0.15, 0.62, 2.3], 0.26, { anchor: [0.25, 0.38, 2.38], pace: { window: [0.3, 0.72] } }),
     // Capot : à l'angle avant, un pas en retrait, le regard vers le bas — capot et pare-brise dans le cadre.
+    // (Deux services à lire : le mouvement s'achève plus tôt, le palier dure.)
     engine: shot([2.5, 2.3, 4.3], [0.25, 0.85, 1.2], 0.25, {
       anchor: [0, 1.02, 1.6],
-      pace: { window: [0.2, 0.8] },
+      pace: { window: [0.2, 0.7] },
       mobile: { position: back([2.5, 2.3, 4.3], [0.25, 0.85, 1.2], 1.55), shift: 0.22 },
     }),
-    // Roue : s'accroupir devant la roue avant — lentement.
-    wheel: shot([2.55, 0.72, 2.45], [0.85, 0.42, 1.35], 0.3, { anchor: [0.86, 0.45, 1.38], pace: { window: [0.12, 0.9] } }),
+    // Roue : s'accroupir devant la roue avant — lentement, puis rester (deux services à lire).
+    wheel: shot([2.55, 0.72, 2.45], [0.85, 0.42, 1.35], 0.3, { anchor: [0.86, 0.45, 1.38], pace: { window: [0.2, 0.8] } }),
     // Poste de conduite : se relever, regarder par la vitre conducteur.
-    cockpit: shot([2.35, 1.5, 0.35], [0.1, 1.0, 0.45], 0.24, { anchor: [0.3, 0.95, 0.15], pace: { window: [0.18, 0.85] } }),
+    cockpit: shot([2.35, 1.5, 0.35], [0.1, 1.0, 0.45], 0.24, { anchor: [0.3, 0.95, 0.15], pace: { window: [0.25, 0.85] } }),
     // Arrière : longer le flanc jusqu'à l'échappement, un peu accroupi.
     // (Mobile : la cible remonte sur l'arrière du véhicule, sinon il sort du haut du cadre portrait.)
     rear: shot([2.2, 0.95, -4.2], [0.4, 0.42, -2.25], 0.3, {
@@ -102,7 +106,8 @@ export const RIGS: Record<'c63', Record<StopKey, Shot>> = {
       mobile: { position: back([2.2, 0.95, -4.2], [0.3, 0.75, -1.9]), target: [0.3, 0.75, -1.9], shift: 0.22 },
     }),
     // Revenir à l'avant pour ouvrir le capot — au cadrage du premier plan de l'inspection. Les phares
-    // s'éteignent, puis tout : le silence avant la section Méthode, qui s'ouvre sur le même noir.
-    night: shot([1.78, 2.3, 5.66], [0.33, 0.6, 0.21], 0.24, { pace: { window: [0, 0.75] }, lightsOut: [0.3, 1] }),
+    // s'éteignent, puis tout : le silence avant la section Méthode, qui s'ouvre sur le même noir. (Départ au
+    // tiers du segment : l'arrière a le temps d'être lu.)
+    night: shot([1.78, 2.3, 5.66], [0.33, 0.6, 0.21], 0.24, { pace: { window: [0.3, 0.85] }, lightsOut: [0.4, 1] }),
   },
 };

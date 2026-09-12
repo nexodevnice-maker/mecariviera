@@ -14,6 +14,7 @@ import {
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import type { StageProgress } from '../motion/stage-progress';
+import { INSPECTION_PACES } from './inspection-paces';
 import { paced, type Pace, type Vec3 } from './rigs';
 
 /**
@@ -88,8 +89,7 @@ const SHOTS: Record<Key, Shot> = {
     focusMix: 1,
     sweep: SWEEP_END,
     sweepMix: 1,
-    // Le balayage occupe presque tout le segment (la ligne avance à vitesse constante).
-    pace: { window: [0.05, 0.95] },
+    pace: INSPECTION_PACES.capot,
     reveal: 1,
     isolate: 0,
   },
@@ -105,8 +105,7 @@ const SHOTS: Record<Key, Shot> = {
     sweep: SWEEP_END,
     sweepMix: 0,
     anchor: [1.547, 0.869, -0.913],
-    // Mises au point : courtes, le regard saute d'une pièce à l'autre.
-    pace: { window: [0.3, 0.75] },
+    pace: INSPECTION_PACES.huile,
     reveal: 1,
     isolate: 1,
   },
@@ -121,7 +120,7 @@ const SHOTS: Record<Key, Shot> = {
     sweep: SWEEP_END,
     sweepMix: 0,
     anchor: [1.483, 0.944, -0.46],
-    pace: { window: [0.3, 0.75] },
+    pace: INSPECTION_PACES.refroidissement,
     reveal: 1,
     isolate: 1,
   },
@@ -136,7 +135,7 @@ const SHOTS: Record<Key, Shot> = {
     sweep: SWEEP_END,
     sweepMix: 0,
     anchor: [1.043, 0.842, -1.067],
-    pace: { window: [0.3, 0.75] },
+    pace: INSPECTION_PACES.frein,
     reveal: 1,
     isolate: 1,
   },
@@ -152,7 +151,7 @@ const SHOTS: Record<Key, Shot> = {
     sweepMix: 0,
     anchor: [1.361, 0.93, -0.96],
     // Le bloc entier : un recul plus ample, un isolement partiel.
-    pace: { window: [0.2, 0.85] },
+    pace: INSPECTION_PACES.moteur,
     reveal: 1,
     isolate: 0.6,
   },
@@ -169,7 +168,7 @@ const SHOTS: Record<Key, Shot> = {
     focusMix: 0,
     sweep: SWEEP_END,
     sweepMix: 0,
-    pace: { window: [0.1, 0.85] },
+    pace: INSPECTION_PACES.depart,
     reveal: 1,
     isolate: 0,
   },

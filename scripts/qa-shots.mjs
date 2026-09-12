@@ -59,7 +59,7 @@ for (const { name, ...options } of viewports) {
   // Même point focal que src/motion/stage-progress.ts : centre de l'arrêt, ou haut de la feuille en mobile.
   const stops = await page.$$eval('[data-stop]', (els) =>
     els.map((el) => {
-      const focus = matchMedia('(max-width: 899px)').matches ? el.querySelector('[data-focus]') : null;
+      const focus = matchMedia('(max-width: 899px)').matches && !el.closest('.has-captions') ? el.querySelector('[data-focus]') : null;
       const r = (focus ?? el).getBoundingClientRect();
       const mark = r.top + scrollY + (focus ? 0 : r.height / 2);
       return { key: el.dataset.stop, y: Math.round(mark - innerHeight / 2), inspection: Boolean(el.closest('[data-inspection]')) };
