@@ -1,0 +1,53 @@
+---
+import Base from '../layouts/Base.astro';
+
+// Servie par Cloudflare Pages avec le statut 404 pour toute adresse inconnue (sans elle, l'hébergeur renvoie
+// l'accueil en 200). Hors index, absente du sitemap.
+---
+
+<Base
+  title="Page introuvable — MECA RIVIERA"
+  description="Cette adresse ne correspond à aucune page du site MECA RIVIERA."
+  noindex
+>
+  <main id="contenu" class="lost wrap">
+    <p class="label lost__code">Erreur 404</p>
+    <h1 class="lost__title">Page introuvable</h1>
+    <p class="lost__text">Cette adresse ne mène à aucune page du site.</p>
+    <a class="btn btn--primary" href="/">Retour à l’accueil</a>
+  </main>
+</Base>
+
+<style>
+  .lost {
+    display: grid;
+    align-content: center;
+    justify-items: start;
+    gap: 1.25rem;
+    min-height: 100svh;
+    padding-block: 4rem;
+  }
+
+  .lost__code {
+    color: var(--blue-soft);
+  }
+
+  .lost__title {
+    font-stretch: var(--wide);
+    font-weight: 700;
+    font-size: clamp(2.5rem, 7vw, 5.5rem);
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+
+  .lost__text {
+    max-width: 36ch;
+    color: var(--text-2);
+  }
+
+  .lost .btn {
+    margin-top: 0.75rem;
+  }
+</style>

@@ -38,6 +38,8 @@ fixe le véhicule du hero (captures reproductibles).
 src/
   content/site.ts        contenu unique, chaque fait avec son statut (CONFIRMED, TO_CONFIRM, …)
   pages/index.astro      page d'accueil
+  pages/404.astro        page introuvable (hors index)
+  layouts/Base.astro     <head> commun : indexation, canonique, Open Graph, Twitter, Search Console
   components/            Header, Stage (hero + services), Method (inspection), Territory, Contact, Footer, MobileBar
   3d/                    hero : boot (chargement différé), stage, rigs (cadrages), studio (éclairage),
                          vehicles (tirage du véhicule) ; Méthode : inspection (scan A1)
@@ -57,10 +59,19 @@ La commune choisie sur la carte (`Territory`) est transmise à la demande (`Cont
 `meca:town`.
 Une information inconnue reste `UNKNOWN` et n'est jamais affichée.
 
+## Indexation et SEO
+
+- Production : `https://nexodev.pages.dev` (`site` dans `astro.config.mjs`) — Cloudflare Pages, branche `main`,
+  `npm run build` → `dist/`. Canonique, Open Graph et image de partage en URLs absolues ; sitemap généré par
+  `@astrojs/sitemap` (`sitemap-index.xml`), annoncé par `public/robots.txt` ; page 404 hors index.
+- Le build de production est indexable (`index, follow`) ; le serveur de développement ne l'est jamais.
+  `PUBLIC_INDEXABLE=false` au build donne une préproduction non indexable. Nouveau domaine : changer `site` et
+  la ligne `Sitemap` de `public/robots.txt`.
+- Données structurées : `WebSite` seul (nom, adresse) — aucune donnée d'entreprise tant qu'elle n'est pas
+  confirmée.
+
 ## Pré-lancement
 
-- `noindex` tant que `PUBLIC_INDEXABLE` n'est pas `true` ; renseigner `site` dans `astro.config.mjs`
-  (domaine) avant la mise en ligne.
 - Le formulaire n'envoie rien sur le réseau tant que `PUBLIC_FORM_ENDPOINT` n'est pas défini : il prépare
   la demande en SMS vers le numéro de réception (`contact.requests` : le 06 35 27 73 69), dans l'application
   de l'utilisateur.
@@ -68,4 +79,4 @@ Une information inconnue reste `UNKNOWN` et n'est jamais affichée.
   rétablie (`publication.creditsDisplay`, relevé par `npm run content:check`).
 - Avant publication : `npm run content:check -- --strict` doit passer, et les points de
   `MECA_RIVIERA_REFERENTIELS/09_GATES/PUBLICATION_READINESS.md` être réunis (mentions légales,
-  confidentialité, domaine).
+  confidentialité).

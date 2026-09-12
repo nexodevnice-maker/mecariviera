@@ -311,10 +311,10 @@ export const publication = {
     note: 'Le formulaire rédige un SMS vers contact.requests ; PUBLIC_FORM_ENDPOINT reste possible plus tard.',
   },
   domain: {
-    value: null,
-    status: 'REQUIRED_BEFORE_PUBLICATION',
+    value: 'https://nexodev.pages.dev',
+    status: 'CONFIRMED',
     source: porteur,
-    note: 'Domaine à acheter ; renseigner `site` dans astro.config.mjs, puis PUBLIC_INDEXABLE=true.',
+    note: 'Adresse de production (Cloudflare Pages, branche main), déclarée dans `site` (astro.config.mjs). Si un domaine propre est acheté : changer `site` et la ligne Sitemap de public/robots.txt.',
   },
   logo: {
     value: 'Signe provisoire (deux traits obliques)',
