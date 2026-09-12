@@ -52,6 +52,13 @@ const phone = contact.phones.value[0];
       border-color 0.35s var(--ease-out);
   }
 
+  /* Mobile : opaque dès qu'on quitte le haut de page — aucun texte ne transparaît sous l'en-tête. */
+  @media (max-width: 899px) {
+    .site-header {
+      background: var(--ink);
+    }
+  }
+
   .site-header.is-top {
     background: transparent;
     border-bottom-color: transparent;

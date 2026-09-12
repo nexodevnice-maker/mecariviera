@@ -1,5 +1,5 @@
 ---
-import { brand, contact, credits, zone } from '../content/site';
+import { brand, contact, zone } from '../content/site';
 import Mark from './Mark.astro';
 
 const phones = contact.phones.value;
@@ -34,22 +34,11 @@ const year = new Date().getFullYear();
       </ul>
     </div>
 
-    <div class="footer__credits">
-      <p class="label">Crédits 3D</p>
-      <ul>
-        {
-          credits.map((c) => (
-            <li>
-              «&nbsp;{c.title}&nbsp;» — {c.author}, licence {c.license}
-            </li>
-          ))
-        }
-      </ul>
-      <p>
-        Modèles modifiés (optimisation, matériaux, logos masqués). Les véhicules représentés sont des illustrations&nbsp;: MECA
-        RIVIERA n’est affiliée à aucun constructeur.
-      </p>
-    </div>
+    <!-- Maquette : crédits 3D non affichés (traçabilité dans src/content/site.ts ; à rétablir ou licences
+         acquises avant publication — publication.creditsDisplay). La non-affiliation reste affichée. -->
+    <p class="footer__note">
+      Les véhicules représentés sont des illustrations&nbsp;: MECA RIVIERA n’est affiliée à aucun constructeur.
+    </p>
 
     <p class="footer__bottom label">© {year} {brand.name.value} · Site en pré-lancement</p>
   </div>
@@ -100,9 +89,7 @@ const year = new Date().getFullYear();
     color: var(--blue-soft);
   }
 
-  .footer__credits {
-    display: grid;
-    gap: 0.75rem;
+  .footer__note {
     max-width: 52rem;
     padding-block: 2.5rem;
     font-size: 0.8125rem;

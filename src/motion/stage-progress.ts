@@ -4,9 +4,9 @@
  * indiquent le trajet entre deux arrêts. Aucun calcul de layout pendant le scroll :
  * les positions sont mesurées au chargement et au redimensionnement.
  *
- * Point focal d'un arrêt : son centre (desktop) ou, en mobile, le haut de sa feuille
- * de texte `[data-focus]` — la caméra est arrivée quand la feuille atteint le milieu
- * de l'écran, le véhicule restant visible au-dessus.
+ * Point focal d'un arrêt : son centre (desktop, et mobile avec légendes — les arrêts y sont de
+ * simples longueurs de scroll). Mobile sans légendes (repli) : le haut de sa feuille de texte
+ * `[data-focus]` — la caméra est arrivée quand la feuille atteint le milieu de l'écran.
  */
 export interface StageProgress {
   read(): number;
@@ -18,7 +18,7 @@ export function createStageProgress(stops: HTMLElement[], narrow: MediaQueryList
 
   const measure = () => {
     marks = stops.map((el) => {
-      const focus = narrow.matches ? el.querySelector<HTMLElement>('[data-focus]') : null;
+      const focus = narrow.matches && !el.closest('.has-captions') ? el.querySelector<HTMLElement>('[data-focus]') : null;
       const rect = (focus ?? el).getBoundingClientRect();
       return rect.top + window.scrollY + (focus ? 0 : rect.height / 2);
     });

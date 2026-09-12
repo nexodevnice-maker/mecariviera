@@ -27,7 +27,7 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
 
   <div class="method__content">
     <div class="insp insp--intro" data-stop="releve">
-      <div class="insp__panel" data-focus>
+      <div class="insp__panel" data-focus data-caption>
         <p class="label method__kicker">Méthode</p>
         <h2 class="method__title" id="methode-title">
           <span>Votre véhicule</span>{' '}
@@ -45,7 +45,7 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
     {
       parts.map((part, i) => (
         <article class="insp" data-stop={part.key} aria-labelledby={`insp-${part.key}`} style={`--span: ${SPAN[part.key] ?? 100}`}>
-          <div class="insp__panel" data-focus>
+          <div class="insp__panel" data-focus data-caption>
             <p class="insp__index label" data-callout-origin>
               <span class="insp__num">{pad(i + 1)}</span>
               <span class="insp__total">/ {pad(parts.length)}</span>
@@ -63,15 +63,19 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
 
     <!-- Prendre de la hauteur : la voiture devient un point, la carte demande où. -->
     <div class="insp insp--depart" data-stop="depart" style="--span: 100">
-      <div class="insp__panel" data-focus>
+      <div class="insp__panel" data-focus data-caption>
         <p class="insp__closing">On sait quoi regarder. Reste à savoir où.</p>
-        <p class="insp__credit label">Relevé 3D&nbsp;: scan photogrammétrique d’un véhicule réel, capot ouvert (illustration).</p>
       </div>
     </div>
+    <!-- Un temps d'arrêt après le dernier cadrage : la vue reste épinglée sur la voiture devenue point, la
+         dernière phrase se lit, puis la carte monte. -->
+    <div class="insp__tail" aria-hidden="true"></div>
   </div>
 </section>
 
 <script>
+  import { INSPECTION_PACES } from '../3d/inspection-paces';
+  import { mountCaptions } from '../motion/captions';
   import { createStageProgress } from '../motion/stage-progress';
 
   // L'inspection 3D ne se charge qu'à l'approche de la section par le haut (un écran avant), ou quand elle
@@ -81,17 +85,24 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
   const canvas = root?.querySelector<HTMLCanvasElement>('[data-inspection-canvas]');
   const stops = root ? [...root.querySelectorAll<HTMLElement>('[data-stop]')] : [];
   const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  const webgl = Boolean(canvas) && !connection?.saveData && 'WebGL2RenderingContext' in window;
 
-  if (root && canvas && stops.length && !connection?.saveData && 'WebGL2RenderingContext' in window) {
-    // La 3D prendra le relais : pas d'affiche (l'inspection s'ouvre sur le noir, la ligne de scan révèle).
-    root.classList.add('has-3d');
+  if (root && stops.length) {
     const narrow = matchMedia('(max-width: 899px)');
+    // Légendes mobiles : mise en page posée dès le chargement (aucun saut à l'arrivée), pilotage à l'approche.
+    root.classList.toggle('has-captions', narrow.matches);
+    // La 3D prendra le relais : pas d'affiche (l'inspection s'ouvre sur le noir, la ligne de scan révèle).
+    if (webgl) root.classList.add('has-3d');
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
         observer.disconnect();
         // Arrêts mesurés à l'approche seulement : aucune mise en page forcée au chargement de la page.
         const progress = createStageProgress(stops, narrow);
+        // Le titre reste pendant la première moitié du balayage, puis chaque pièce a sa légende.
+        const paces = stops.map((el) => INSPECTION_PACES[el.dataset.stop ?? '']);
+        mountCaptions(root, stops, progress, narrow, paces, { firstUntil: 0.35 });
+        if (!webgl || !canvas) return;
         import('../3d/inspection')
           .then(({ createInspection }) => createInspection({ root, canvas, stops, progress, narrow }))
           .catch((error) => {
@@ -295,6 +306,11 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
 
   /* — Prendre de la hauteur ——————————————————— */
 
+  .insp__tail {
+    height: 60vh;
+    height: 60svh;
+  }
+
   .insp__closing {
     font-stretch: var(--wide);
     font-weight: 800;
@@ -302,11 +318,6 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
     line-height: 1;
     letter-spacing: -0.01em;
     text-transform: uppercase;
-  }
-
-  .insp__credit {
-    margin-top: 1.75rem;
-    color: var(--text-3);
   }
 
   /* — Mobile : le véhicule en haut, le texte en feuilles qui montent par-dessus ——— */
@@ -333,6 +344,76 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
     .insp:last-child .insp__panel {
       min-height: 50vh;
       min-height: 50svh;
+    }
+
+    /* — Avec légendes (script) : comme la scène d'ouverture — les arrêts deviennent des longueurs de scroll,
+       le texte une légende en bas de l'écran, visible quand la caméra est arrivée, jamais sur le relevé. */
+    .method:global(.has-captions) .insp {
+      min-height: calc(var(--span, 100) * 1vh);
+      min-height: calc(var(--span, 100) * 1svh);
+      padding: 0;
+    }
+
+    .method:global(.has-captions) .insp--intro {
+      min-height: 130vh;
+      min-height: 130svh;
+    }
+
+    /* La dernière feuille (repli) avait une hauteur minimale : l'annuler sans rien d'autre (un sélecteur plus
+       précis ici l'emporterait sur l'état actif de la légende). */
+    .method:global(.has-captions) .insp:last-child [data-caption] {
+      min-height: 0;
+    }
+
+    .method:global(.has-captions) [data-caption] {
+      position: fixed;
+      inset: auto 0 calc(4.5rem + 1px + env(safe-area-inset-bottom));
+      z-index: 2;
+      padding: 3rem var(--gutter) 1.25rem;
+      background: linear-gradient(0deg, var(--ink) 62%, rgb(11 12 14 / 0));
+      border-top: 0;
+      opacity: 0;
+      transform: translateY(0.75rem);
+      pointer-events: none;
+    }
+
+    .method:global(.has-captions) [data-caption]:global(.is-active),
+    .method:global(.has-captions) [data-caption]:focus-within {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+
+    /* Fondus, une fois la mise en page posée (captions-ready, à l'approche) : au chargement, aucune légende
+       ne s'efface à l'écran ; ensuite, sortie brève et entrée différée — jamais deux légendes à la fois. */
+    .method:global(.has-captions.captions-ready) [data-caption] {
+      transition:
+        opacity 0.2s var(--ease-out),
+        transform 0.2s var(--ease-out);
+    }
+
+    .method:global(.has-captions.captions-ready) [data-caption]:global(.is-active),
+    .method:global(.has-captions.captions-ready) [data-caption]:focus-within {
+      transition:
+        opacity 0.35s var(--ease-out) 0.12s,
+        transform 0.35s var(--ease-out) 0.12s;
+    }
+
+    .method:global(.has-captions) .insp__index {
+      margin-bottom: 1rem;
+      padding-bottom: 0.875rem;
+    }
+  }
+
+  @media (max-width: 899px) and (prefers-reduced-motion: reduce) {
+    .method:global(.has-captions) [data-caption] {
+      transform: none;
+    }
+
+    .method:global(.has-captions.captions-ready) [data-caption],
+    .method:global(.has-captions.captions-ready) [data-caption]:global(.is-active) {
+      transition-duration: 0.15s;
+      transition-delay: 0s;
     }
   }
 

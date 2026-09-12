@@ -3,11 +3,14 @@
 Mécanique automobile à domicile, Alpes-Maritimes. Positionnement : **la mécanique vient au véhicule.**
 
 Site statique (Astro 7) avec deux scènes 3D (Three.js) pilotées par le scroll, autour d'un seul principe —
-**le véhicule reste, le mécanicien vient** : le hero montre un véhicule tiré au hasard (C63, RS3 ou M4), garé
-la nuit au bord de la mer, dont la caméra fait le tour à hauteur d'homme, zone par zone ; les phares
-s'éteignent, puis la section Méthode inspecte le scan réel d'une A1, capot ouvert, pièce par pièce, et prend de
-la hauteur ; la carte demande où est garé le véhicule et y fait venir la tournée ; la demande reprend la commune
-choisie. Les règles de conception et de vérité du contenu sont dans
+**le véhicule reste, le mécanicien vient** : une entrée « MECA RIVIERA — PRESENT » couvre la préparation de la
+première scène ; le hero montre un véhicule tiré au hasard (C63, RS3 ou M4), garé la nuit sur la corniche, la
+baie de Villefranche en contrebas (photo du porteur, `public/media/riviera-bay*.webp`), dont la caméra fait le
+tour à hauteur d'homme, zone par zone ; les phares s'éteignent, puis la section Méthode inspecte le scan réel
+d'une A1, capot ouvert, pièce par pièce, et prend de la hauteur ; la carte demande où est garé le véhicule et y
+fait venir la tournée ; la demande reprend la commune choisie. Sur mobile, le texte des arrêts devient une
+légende en bas de l'écran, visible quand la caméra est arrivée (`src/motion/captions.ts`), et une petite lumière
+bleue désigne la pièce du service. Les règles de conception et de vérité du contenu sont dans
 `MECA_RIVIERA_REFERENTIELS/` ; les décisions prises pendant la production sont consignées dans
 `MECA_RIVIERA_REFERENTIELS/00_CONTROL/DECISIONS.md`.
 
@@ -59,7 +62,10 @@ Une information inconnue reste `UNKNOWN` et n'est jamais affichée.
 - `noindex` tant que `PUBLIC_INDEXABLE` n'est pas `true` ; renseigner `site` dans `astro.config.mjs`
   (domaine) avant la mise en ligne.
 - Le formulaire n'envoie rien sur le réseau tant que `PUBLIC_FORM_ENDPOINT` n'est pas défini : il prépare
-  la demande en SMS vers le numéro de réception (non affiché), dans l'application de l'utilisateur.
+  la demande en SMS vers le numéro de réception (`contact.requests` : le 06 35 27 73 69), dans l'application
+  de l'utilisateur.
+- Maquette : les crédits 3D ne sont pas affichés. Avant toute publication, licences acquises ou attribution
+  rétablie (`publication.creditsDisplay`, relevé par `npm run content:check`).
 - Avant publication : `npm run content:check -- --strict` doit passer, et les points de
   `MECA_RIVIERA_REFERENTIELS/09_GATES/PUBLICATION_READINESS.md` être réunis (mentions légales,
   confidentialité, domaine).

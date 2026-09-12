@@ -46,12 +46,12 @@ export const contact = {
   availability: { value: '24 h/24 — 7 j/7', status: 'CONFIRMED', source: porteur } satisfies Fact<string>,
   snapchat: { value: 'mecariviera26', status: 'CONFIRMED', source: porteur } satisfies Fact<string | null>,
   email: { value: null, status: 'CONFIRMED', source: porteur, note: 'Pas d’e-mail pour l’instant.' } satisfies Fact<string | null>,
-  /** Numéro qui reçoit les demandes écrites du formulaire (SMS) — jamais affiché sur le site. */
+  /** Numéro qui reçoit les demandes écrites du formulaire (SMS) : le numéro principal (décision du 12/09/2026). */
   requests: {
-    value: { display: '07 53 81 05 08', href: 'sms:+33753810508' },
+    value: { display: '06 35 27 73 69', href: 'sms:+33635277369' },
     status: 'CONFIRMED',
     source: porteur,
-    note: 'Réception des demandes par SMS ; numéro non affiché.',
+    note: 'Réception des demandes par SMS au numéro principal (demande du porteur du 12/09/2026 ; historique dans DECISIONS.md).',
   } satisfies Fact<Phone>,
 };
 
@@ -253,7 +253,10 @@ export interface Credit {
   url: string;
 }
 
-/** Attribution des modèles 3D (obligation de licence). « Modifié » : optimisation et matériaux. */
+/**
+ * Attribution des modèles 3D (obligation de licence). « Modifié » : optimisation et matériaux. Conservée pour
+ * la traçabilité ; plus affichée dans la maquette (voir publication.creditsDisplay).
+ */
 export const credits: Credit[] = [
   {
     title: 'App Trnio Plus test voiture Arnaud',
@@ -302,7 +305,7 @@ export const publication = {
     note: 'Contact données personnelles : l’exploitant. Page Politique de confidentialité à rédiger.',
   },
   formDestination: {
-    value: 'SMS au 07 53 81 05 08',
+    value: 'SMS au 06 35 27 73 69',
     status: 'CONFIRMED',
     source: porteur,
     note: 'Le formulaire rédige un SMS vers contact.requests ; PUBLIC_FORM_ENDPOINT reste possible plus tard.',
@@ -318,6 +321,12 @@ export const publication = {
     status: 'CONFIRMED',
     source: porteur,
     note: 'Signe provisoire conservé.',
+  },
+  creditsDisplay: {
+    value: null,
+    status: 'REQUIRED_BEFORE_PUBLICATION',
+    source: porteur,
+    note: 'Maquette de démonstration : crédits 3D retirés de l’affichage (demande du porteur du 12/09/2026). Avant toute mise en ligne publique ou commerciale : licences acquises ou vérifiées, attribution rétablie si la licence l’exige (CC BY, CC BY-NC-SA) — la clause NC exclut un usage commercial en l’état.',
   },
   modelLicenses: {
     value: 'C63, M4, RS3 : CC BY-NC-SA 4.0 — scan A1 : CC BY 4.0',

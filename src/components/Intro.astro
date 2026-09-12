@@ -1,0 +1,143 @@
+---
+/**
+ * Entrée : « MECA RIVIERA — PRESENT » sur la nuit, le temps que la première scène soit réellement prête
+ * (première image de la 3D rendue ; sans WebGL, l'affiche décodée). Ni pourcentage, ni barre, ni spinner.
+ * Elle se lève dès que la scène est prête — jamais avant une seconde de lecture —, au plus tard après 5 s
+ * (l'affiche, identique à la première image de la 3D, prend alors le relais et la 3D la remplace à son
+ * arrivée), et aussitôt à la moindre interaction (défilement, touche, toucher). L'arrivée des phares attend
+ * qu'elle se lève (événement meca:enter). Sans script, ou arrivée par un lien vers une section : aucune entrée.
+ */
+---
+
+<script is:inline>
+  if (!location.hash) document.documentElement.classList.add('has-intro');
+</script>
+<div class="intro" data-intro aria-hidden="true" data-nosnippet>
+  <p class="intro__card">
+    <span class="intro__brand">MECA RIVIERA</span>
+    <span class="intro__present">PRESENT</span>
+  </p>
+</div>
+<script is:inline>
+  (() => {
+    const root = document.documentElement;
+    const intro = document.querySelector('[data-intro]');
+    if (!intro) return;
+    if (!root.classList.contains('has-intro')) return intro.remove();
+    const MIN = 1300; // lecture du titre, même quand tout est déjà en cache
+    const MAX = 5000; // au-delà, l'affiche prend le relais : la page n'attend pas une ressource lente
+    const start = performance.now();
+    let leaving = false;
+    const leave = (instant) => {
+      if (leaving) return;
+      leaving = true;
+      clearTimeout(timer);
+      dispatchEvent(new CustomEvent('meca:enter'));
+      const done = () => {
+        intro.remove();
+        root.classList.remove('has-intro');
+      };
+      if (instant) return done();
+      intro.classList.add('is-leaving');
+      intro.addEventListener('transitionend', (event) => event.target === intro && done());
+      setTimeout(done, 1600);
+    };
+    const timer = setTimeout(() => leave(false), MAX);
+    // Scène prête (événement de la 3D, ou repli statique : l'affiche doit alors être décodée).
+    addEventListener(
+      'meca:scene-ready',
+      (event) => {
+        const poster = event.detail?.static ? document.querySelector('.stage__poster img') : null;
+        const decoded = poster?.decode
+          ? Promise.race([poster.decode().catch(() => {}), new Promise((resolve) => setTimeout(resolve, 1500))])
+          : Promise.resolve();
+        decoded.then(() => setTimeout(() => leave(false), Math.max(0, MIN - (performance.now() - start))));
+      },
+      { once: true },
+    );
+    // Contrôle QA (captures) : levée immédiate, sans transition.
+    addEventListener('meca:intro-finish', () => leave(true), { once: true });
+    for (const type of ['wheel', 'touchstart', 'keydown', 'scroll']) addEventListener(type, () => leave(false), { passive: true, once: true });
+    // Le titre n'apparaît qu'avec sa police (préchargée) : jamais de changement de fonte à l'écran.
+    Promise.race([document.fonts ? document.fonts.ready : null, new Promise((resolve) => setTimeout(resolve, 800))]).then(() =>
+      intro.classList.add('is-set'),
+    );
+  })();
+</script>
+
+<style>
+  /* Au-dessus de l'en-tête et de la barre d'appel, sous le lien d'évitement (et sous le grain, en desktop). */
+  .intro {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: none;
+    place-items: center;
+    padding: var(--gutter);
+    /* Noir de la page, et, très bas, un souffle de bleu nuit : l'horizon avant qu'il n'existe. */
+    background: radial-gradient(90% 55% at 50% 108%, #0f1626 0%, var(--ink) 72%);
+    transition: opacity 0.9s var(--ease-out);
+  }
+
+  :global(.has-intro) .intro {
+    display: grid;
+  }
+
+  .intro.is-leaving {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .intro__card {
+    display: grid;
+    justify-items: center;
+    gap: 1.25rem;
+    text-align: center;
+    transition: opacity 0.45s var(--ease-out);
+  }
+
+  .intro.is-leaving .intro__card {
+    opacity: 0;
+  }
+
+  .intro__brand,
+  .intro__present {
+    opacity: 0;
+    transition: opacity 1.2s var(--ease-out);
+  }
+
+  .intro.is-set .intro__brand,
+  .intro.is-set .intro__present {
+    opacity: 1;
+  }
+
+  .intro__brand {
+    font-stretch: var(--wide);
+    font-weight: 800;
+    font-size: clamp(1.625rem, 3.2vw, 2.75rem);
+    line-height: 1;
+    letter-spacing: 0.08em;
+    margin-right: -0.08em;
+  }
+
+  /* Générique : petites capitales très espacées, le bleu de la marque, un temps après le nom. */
+  .intro__present {
+    font-stretch: var(--semi);
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.62em;
+    margin-right: -0.62em;
+    color: var(--blue-soft);
+    transition-delay: 0.45s;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .intro,
+    .intro__card,
+    .intro__brand,
+    .intro__present {
+      transition-duration: 0.2s;
+      transition-delay: 0s;
+    }
+  }
+</style>

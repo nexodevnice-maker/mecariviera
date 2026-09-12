@@ -26,7 +26,7 @@ const stops = [...ORDER, ...[...grouped.keys()].filter((z) => !ORDER.includes(z)
   .map((zone) => ({ zone, list: grouped.get(zone) as Service[] }));
 const pad = (n: number) => String(n).padStart(2, '0');
 // Longueur de scroll de chaque arrêt (écrans × 100) : elle fait le rythme, avec celui de la caméra (rigs.ts).
-const SPAN: Record<CarZone, number> = { front: 80, engine: 100, wheel: 110, cockpit: 90, rear: 90 };
+const SPAN: Record<CarZone, number> = { front: 80, engine: 110, wheel: 110, cockpit: 90, rear: 90 };
 ---
 
 <section class="stage" data-stage aria-label="Présentation et services">
@@ -63,35 +63,39 @@ const SPAN: Record<CarZone, number> = { front: 80, engine: 100, wheel: 110, cock
       <circle class="stage__callout-ring" r="8"></circle>
       <circle class="stage__callout-dot" r="2.5"></circle>
     </svg>
+    <!-- Mobile : repère lumineux de la pièce du service (placé par la scène 3D). -->
+    <span class="stage__beacon" data-beacon></span>
   </div>
 
   <div class="stage__content">
     <div class="hero" data-stop="hero">
-      <p class="hero__eyebrow label">
-        <span class="hero__brand">MECA RIVIERA</span>
-        <span class="hero__eyebrow-sep" aria-hidden="true"></span>
-        <span>Mécanique automobile à domicile</span>
-      </p>
-      <h1 class="hero__title">
-        <span>La mécanique</span>{' '}
-        <span>vient à votre</span>{' '}
-        <span>véhicule.</span>
-      </h1>
-      <p class="hero__lede">Là où elle est garée, chez vous&nbsp;: {townsText} et alentours, 24&nbsp;h/24 et 7&nbsp;j/7.</p>
-      <div class="hero__actions">
-        <a class="btn btn--primary" href={phone.href}>
-          Appeler<span class="btn__sep" aria-hidden="true"></span>{phone.display}
-        </a>
-        <a class="btn btn--ghost" href="#demande">Demander une intervention</a>
+      <div class="hero__panel" data-caption>
+        <p class="hero__eyebrow label">
+          <span class="hero__brand">MECA RIVIERA</span>
+          <span class="hero__eyebrow-sep" aria-hidden="true"></span>
+          <span>Mécanique automobile à domicile</span>
+        </p>
+        <h1 class="hero__title">
+          <span>La mécanique</span>{' '}
+          <span>vient à votre</span>{' '}
+          <span>véhicule.</span>
+        </h1>
+        <p class="hero__lede">Là où elle est garée, chez vous&nbsp;: {townsText} et alentours, 24&nbsp;h/24 et 7&nbsp;j/7.</p>
+        <div class="hero__actions">
+          <a class="btn btn--primary" href={phone.href}>
+            Appeler<span class="btn__sep" aria-hidden="true"></span>{phone.display}
+          </a>
+          <a class="btn btn--ghost" href="#demande">Demander une intervention</a>
+        </div>
+        <p class="hero__foot label">
+          <span>{zone.area.value}</span>
+          <span class="hero__cue" aria-hidden="true">Le tour du véhicule ↓</span>
+        </p>
       </div>
-      <p class="hero__foot label">
-        <span>{zone.area.value}</span>
-        <span class="hero__cue" aria-hidden="true">Le tour du véhicule ↓</span>
-      </p>
     </div>
 
     <div class="overview" data-stop="overview" id="services" style="--span: 110">
-      <div class="overview__panel" data-focus>
+      <div class="overview__panel" data-focus data-caption>
         <p class="label overview__kicker">Services</p>
         <h2 class="overview__title">Ce qu’on règle chez vous.</h2>
         <p class="overview__text">
@@ -103,7 +107,7 @@ const SPAN: Record<CarZone, number> = { front: 80, engine: 100, wheel: 110, cock
     {
       stops.map(({ zone: z, list }, i) => (
         <article class="stop" data-stop={z} aria-labelledby={`zone-${z}`} style={`--span: ${SPAN[z]}`}>
-          <div class="stop__panel" data-focus>
+          <div class="stop__panel" data-focus data-caption>
             <p class="stop__index label" data-callout-origin>
               <span class="stop__num">{pad(i + 1)}</span>
               <span class="stop__total">/ {pad(stops.length)}</span>
@@ -176,6 +180,11 @@ const SPAN: Record<CarZone, number> = { front: 80, engine: 100, wheel: 110, cock
     opacity: 1;
   }
 
+  /* Sous l'entrée, la 3D apparaît d'un coup : c'est l'entrée qui se lève sur elle. */
+  :global(.has-intro) .stage__canvas {
+    transition: none;
+  }
+
   .stage__night {
     position: absolute;
     z-index: 1;
@@ -224,6 +233,67 @@ const SPAN: Record<CarZone, number> = { front: 80, engine: 100, wheel: 110, cock
     fill: none;
     stroke: var(--blue-soft);
     stroke-width: 1;
+  }
+
+  /* Mobile : une lumière d'identification sur la pièce du service — un point net et une lueur bleue courte
+     qui respire à peine. Ni halo large, ni néon ; immobile en mouvement réduit ; absente en desktop. */
+  .stage__beacon {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .stage__beacon::before,
+  .stage__beacon::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .stage__beacon::before {
+    z-index: 1;
+    width: 7px;
+    height: 7px;
+    background: #dbe5ff;
+    box-shadow: 0 0 5px 1px rgb(134 166 255 / 0.85);
+  }
+
+  .stage__beacon::after {
+    width: 26px;
+    height: 26px;
+    background: radial-gradient(circle, rgb(36 85 255 / 0.55) 0%, rgb(36 85 255 / 0) 70%);
+    animation: beacon 2.6s ease-in-out infinite;
+  }
+
+  @keyframes beacon {
+    0%,
+    100% {
+      opacity: 0.65;
+      transform: translate(-50%, -50%) scale(0.9);
+    }
+
+    50% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.08);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stage__beacon::after {
+      animation: none;
+    }
+  }
+
+  @media (min-width: 900px) {
+    .stage__beacon {
+      display: none;
+    }
   }
 
   .stage__callout-dot {
@@ -426,6 +496,92 @@ const SPAN: Record<CarZone, number> = { front: 80, engine: 100, wheel: 110, cock
 
     .svc__title {
       font-size: 1.625rem;
+    }
+
+    /* — Avec légendes (script) : les arrêts deviennent des longueurs de scroll ; leur texte, une légende posée
+       en bas de l'écran, au-dessus de la barre d'appel, sur un fondu de nuit — visible quand la caméra est
+       arrivée, jamais sur la scène. Sans script, les feuilles ci-dessus restent le repli. */
+    .stage:global(.has-captions) .hero,
+    .stage:global(.has-captions) .overview,
+    .stage:global(.has-captions) .stop {
+      display: block;
+      min-height: calc(var(--span, 100) * 1vh);
+      min-height: calc(var(--span, 100) * 1svh);
+      padding: 0;
+    }
+
+    .stage:global(.has-captions) [data-caption] {
+      position: fixed;
+      inset: auto 0 calc(4.5rem + 1px + env(safe-area-inset-bottom));
+      z-index: 2;
+      width: auto;
+      padding: 3rem var(--gutter) 1.25rem;
+      background: linear-gradient(0deg, var(--ink) 62%, rgb(11 12 14 / 0));
+      border-top: 0;
+      opacity: 0;
+      transform: translateY(0.75rem);
+      pointer-events: none;
+    }
+
+    .stage:global(.has-captions) [data-caption]:global(.is-active),
+    .stage:global(.has-captions) [data-caption]:focus-within {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+
+    /* Fondus, une fois la mise en page posée (captions-ready) : sortie brève, entrée légèrement différée —
+       deux légendes ne se superposent jamais, même en scroll rapide. */
+    .stage:global(.has-captions.captions-ready) [data-caption] {
+      transition:
+        opacity 0.2s var(--ease-out),
+        transform 0.2s var(--ease-out);
+    }
+
+    .stage:global(.has-captions.captions-ready) [data-caption]:global(.is-active),
+    .stage:global(.has-captions.captions-ready) [data-caption]:focus-within {
+      transition:
+        opacity 0.35s var(--ease-out) 0.12s,
+        transform 0.35s var(--ease-out) 0.12s;
+    }
+
+    /* Le hero : sa légende descend jusqu'en bas — la barre d'appel n'apparaît qu'après lui. */
+    .stage:global(.has-captions) .hero__panel {
+      bottom: 0;
+      padding: 3rem var(--gutter) calc(1.5rem + env(safe-area-inset-bottom));
+    }
+
+    /* Légendes à deux services : plus serrées, pour laisser la scène au-dessus. */
+    .stage:global(.has-captions) .stop__index {
+      margin-bottom: 1rem;
+      padding-bottom: 0.875rem;
+    }
+
+    .stage:global(.has-captions) .svc + .svc {
+      margin-top: 1.125rem;
+      padding-top: 1.125rem;
+    }
+
+    .stage:global(.has-captions) .svc__title {
+      margin-top: 0.5rem;
+      font-size: 1.375rem;
+    }
+
+    .stage:global(.has-captions) .svc__intervention {
+      margin-top: 0.5rem;
+      font-size: 0.9375rem;
+    }
+  }
+
+  @media (max-width: 899px) and (prefers-reduced-motion: reduce) {
+    .stage:global(.has-captions) [data-caption] {
+      transform: none;
+    }
+
+    .stage:global(.has-captions.captions-ready) [data-caption],
+    .stage:global(.has-captions.captions-ready) [data-caption]:global(.is-active) {
+      transition-duration: 0.15s;
+      transition-delay: 0s;
     }
   }
 
