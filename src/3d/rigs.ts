@@ -106,11 +106,12 @@ export const RIGS: Record<'c63', Record<StopKey, Shot>> = {
     // Poste de conduite : se relever, regarder par la vitre conducteur.
     cockpit: shot([2.35, 1.5, 0.35], [0.1, 1.0, 0.45], 0.24, { anchor: [0.3, 0.95, 0.15], pace: { window: [0.25, 0.85] } }),
     // Arrière : longer le flanc jusqu'à l'échappement, un peu accroupi.
-    // (Mobile : la cible remonte sur l'arrière du véhicule, sinon il sort du haut du cadre portrait.)
+    // (Mobile : la cible remonte sur l'arrière du véhicule, sinon il sort du haut du cadre portrait ; un pas de plus
+    // en retrait, le regard recentré sur la poupe : les quatre sorties dans le cadre, pour leurs flammes.)
     rear: shot([2.2, 0.95, -4.2], [0.4, 0.42, -2.25], 0.3, {
       anchor: [0.45, 0.33, -2.3],
       pace: { window: [0.2, 0.85] },
-      mobile: { position: back([2.2, 0.95, -4.2], [0.3, 0.75, -1.9]), target: [0.3, 0.75, -1.9], shift: 0.22 },
+      mobile: { position: back([2.2, 0.95, -4.2], [0.3, 0.75, -1.9], 1.5), target: [-0.15, 0.75, -1.9], shift: 0.22 },
     }),
     // Revenir à l'avant pour ouvrir le capot — au cadrage du premier plan de l'inspection. Les phares
     // s'éteignent, puis tout : le silence avant la section Méthode, qui s'ouvre sur le même noir. (Départ au

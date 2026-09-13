@@ -17,6 +17,7 @@ import {
   Fog,
   Group,
   InstancedMesh,
+  LatheGeometry,
   LinearFilter,
   LinearMipmapLinearFilter,
   LinearSRGBColorSpace,
@@ -26,6 +27,7 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   NeutralToneMapping,
+  OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
   PMREMGenerator,
@@ -40,8 +42,11 @@ import {
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
+  Vector2,
   Vector3,
+  Vector4,
   WebGLRenderer,
+  WebGLRenderTarget,
   type MeshPhysicalMaterial,
   type Object3D,
   type Texture,
@@ -55,7 +60,7 @@ import type { StageProgress } from '../motion/stage-progress';
 import { BANDS, createBay, FIT_TALL, FIT_WIDE, type BayFit } from './bay';
 import { guidedPace, paced, RIGS, type Framing, type Shot, type StopKey } from './rigs';
 import { STUDIO_ENV_SIGMA, STUDIO_PANELS } from './studio';
-import { vehicleById, type VehicleId } from './vehicles';
+import { vehicleById, type Exhaust, type VehicleId } from './vehicles';
 
 const INK = 0x0b0c0e;
 /**
@@ -83,10 +88,30 @@ const LAMP_HEADS_GLSL = LAMP_Z.map((z) => `vec3(${glsl(LAMP_X + LAMP_REACH)}, ${
 /** L'autre trottoir : un lampadaire hors champ, face au véhicule (sa lanterne : x, y, z) — la lumière de face. */
 const ROAD_LAMP: [number, number, number] = [7.6, 4.1, 2.2];
 const ROAD_LAMP_GLSL = `vec2(${glsl(ROAD_LAMP[0])}, ${glsl(ROAD_LAMP[2])})`;
-/** Téléphone, intensités (unités physiques) : clair de lune, lampadaire d'en face, lanterne de l'esplanade. */
+/**
+ * Téléphone, intensités (unités physiques) : clair de lune, lampadaire d'en face (la lumière de face), lanterne de
+ * l'esplanade — la vraie source de la scène : elle baigne le véhicule, porte sa flaque jusqu'à lui et y dessine son
+ * ombre portée (castShadow).
+ */
 const MOON_LIGHT = 0.8;
-const KEY_LIGHT = 70;
-const LAMP_LIGHT = 18;
+const KEY_LIGHT = 85;
+const LAMP_LIGHT = 140;
+/**
+ * Flaque d'une lanterne au sol (téléphone) : éclairement à son pied ; optique routière (répartition « en ailes ») —
+ * il reste soutenu jusqu'à LAMP_SPREAD m, où se tient le véhicule, puis il tombe.
+ */
+const LAMP_POWER = 5.6;
+const LAMP_SPREAD = 7.5;
+const LAMP_FOOT = LAMP_HEIGHT - 0.17;
+/**
+ * Téléphone : d'où l'ombre portée du véhicule est projetée — la lanterne voisine (même côté, même hauteur), ramenée à
+ * hauteur du milieu du véhicule. Vue de la chaussée, l'ombre de la lanterne exacte, derrière le véhicule, filerait
+ * droit vers la caméra et se confondrait avec la nuit ; ainsi (lumière « trichée », comme au cinéma), elle se couche
+ * à côté de lui, sur le sol éclairé, lisible — toujours à l'opposé de la lanterne.
+ */
+const SHADOW_FROM: [number, number, number] = [LAMP_X + LAMP_REACH, LAMP_FOOT, -0.5];
+/** Emprise au sol de l'ombre portée (x0, z0, x1, z1 ; m) : du véhicule jusqu'où la lanterne la projette. */
+const SHADE_AREA = [-1.5, -3.5, 5.5, 4.5] as const;
 /**
  * Allumage (téléphone) : la lanterne s'amorce en papillotant, prend sa pleine puissance dans un léger éclat, puis
  * se pose — (secondes, niveau). La scène, elle, s'éclaire d'un seul tenant (updateLamp).
@@ -113,6 +138,30 @@ function ignition(t: number) {
     }
   }
   return 1;
+}
+
+/**
+ * Téléphone, arrêt Échappement : les flammes des quatre sorties, une seule fois, à l'arrivée de la caméra — une
+ * longue gerbe, puis des détonations qui s'espacent (début, durée, force ; secondes).
+ */
+const BURSTS: [number, number, number][] = [
+  [0, 0.42, 1],
+  [0.5, 0.2, 0.8],
+  [0.78, 0.16, 0.55],
+  [1.0, 0.12, 0.35],
+];
+const FLAME_S = 1.2;
+/** Lueur des flammes (unités physiques) : l'arrière du véhicule. */
+const FLAME_LIGHT = 3;
+
+function burst(t: number) {
+  let power = 0;
+  for (const [start, length, force] of BURSTS) {
+    const x = t - start;
+    if (x > 0 && x < length)
+      power = Math.max(power, force * MathUtils.smoothstep(x, 0, 0.03) * (1 - MathUtils.smoothstep(x, length * 0.35, length)));
+  }
+  return power;
 }
 
 /** Lumières des lampadaires, partagées par le sol, le garde-corps et le cône de lumière (mêmes objets). */
@@ -201,9 +250,31 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const keyLight = new SpotLight(0xffcf96, 0, 26, 0.5, 0.75, 2);
   keyLight.position.set(...ROAD_LAMP);
   keyLight.target.position.set(0, 0.45, 0);
-  const lampLight = new PointLight(0xffc98a, 0, 12, 2);
+  // La lanterne voisine, sans portée limite (une vraie source) : c'est elle qui éclaire la scène.
+  const lampLight = new PointLight(0xffc98a, 0, 0, 2);
   lampLight.position.set(LAMP_X + LAMP_REACH, LAMP_HEIGHT - 0.3, LAMP_Z[0]);
   corniche.group.add(moonLight, moonLight.target, keyLight, keyLight.target, lampLight);
+  // Arrêt Échappement : les flammes des quatre sorties et leur lueur.
+  const flames = exhaustFlames(vehicleById(vehicle).exhaust);
+  // Tout ce qui n'existe que sur téléphone (dans la scène sur téléphone seulement, resize).
+  const phoneSet = new Group().add(corniche.group, flames.group, flames.light);
+  const roadUniforms = (road.material as ShaderMaterial).uniforms;
+  roadUniforms.uFlameAt.value.copy(flames.at);
+  // L'ombre portée du véhicule sous la lanterne voisine : calculée une fois, à la première mise en page téléphone.
+  const carBox = new Box3().setFromObject(car);
+  let shadeReady = false;
+  const bakeShade = () => {
+    shadeReady = true;
+    const [x0, z0, x1, z1] = SHADE_AREA;
+    roadUniforms.uShade.value = castShadow(renderer, car, new Vector3(...SHADOW_FROM), SHADE_AREA);
+    roadUniforms.uShadeArea.value.set(x0, z0, 1 / (x1 - x0), 1 / (z1 - z0));
+    roadUniforms.uCarBox.value.set(
+      (carBox.min.x + carBox.max.x) / 2,
+      (carBox.min.z + carBox.max.z) / 2,
+      (carBox.max.x - carBox.min.x) / 2,
+      (carBox.max.z - carBox.min.z) / 2,
+    );
+  };
   (road.material as ShaderMaterial).uniforms.uNoise.value.anisotropy = narrow.matches
     ? Math.min(8, renderer.capabilities.getMaxAnisotropy())
     : 1;
@@ -220,20 +291,23 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const lights = coastLights();
   scene.add(lights);
 
-  // Allumage (téléphone) : secondes écoulées depuis le premier geste (LIT : posé). Mouvement réduit : allumé
-  // d'emblée ; arrivée au milieu de la page : allumage aussitôt.
+  // Téléphone : le haut de la page appartient à la nuit. La lanterne s'allume dès que la page le quitte (au premier
+  // geste) et s'éteint quand on y revient. lampT : secondes d'allumage (LIT : posé) ; lampFade : 1 allumée, 0
+  // éteinte (extinction en fondu). Mouvement réduit : ni papillotement ni éclat, un fondu.
   let lampT = reduced.matches ? LIT : 0;
-  let igniteAt = 0;
-  let igniteWanted = window.scrollY > 4;
-  addEventListener('scroll', () => (igniteWanted = true), { once: true, passive: true });
+  let lampFade = 0;
+  let lampOn = false;
+  // Contrôle QA (lamp) : un état figé, que le défilement ne change plus.
+  let lampFrozen = false;
   const updateLamp = () => {
     if (!narrow.matches) return;
     const t = lampT;
-    const level = reduced.matches ? 1 : ignition(t);
+    const on = lampFade * lampFade * (3 - 2 * lampFade);
+    const level = (reduced.matches ? 1 : ignition(t)) * on;
     // La scène s'éclaire d'un seul tenant (aucun clignotement d'ensemble), avec un seul éclat sur la carrosserie
     // pendant que les reflets glissent ; la lanterne passe du blanc de l'amorçage à sa lumière chaude.
-    const rise = MathUtils.smoothstep(t, 0.1, 0.9);
-    const flash = reduced.matches ? 0 : Math.exp(-(((t - 0.46) / 0.14) ** 2));
+    const rise = MathUtils.smoothstep(t, 0.1, 0.9) * on;
+    const flash = reduced.matches ? 0 : Math.exp(-(((t - 0.46) / 0.14) ** 2)) * on;
     const warm = MathUtils.smoothstep(t, 0.3, 1.1);
     const out = lampUniforms.uOut.value;
     lampUniforms.uLamp.value = level;
@@ -241,10 +315,10 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     keyLight.color.copy(lampUniforms.uLampTint.value);
     lampLight.color.copy(lampUniforms.uLampTint.value);
     keyLight.intensity = KEY_LIGHT * rise * (1 + 0.9 * flash) * out;
-    lampLight.intensity = LAMP_LIGHT * level * out;
+    lampLight.intensity = LAMP_LIGHT * level * (1 + 0.5 * flash) * out;
     corniche.setLevel(level * out);
     scene.environmentIntensity = 0.2 + 0.8 * rise;
-    scene.environmentRotation.y = -0.9 * (1 - Math.min(t / 1.4, 1)) ** 3;
+    scene.environmentRotation.y = -0.9 * (1 - Math.min(t / 1.4, 1) * on) ** 3;
   };
   performance.mark('stage:model');
 
@@ -267,9 +341,12 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   };
   buildPath();
 
+  // Dimensions de la vue, relevées au redimensionnement (resize) : aucune lecture de mise en page par image.
+  let vw = viewport.clientWidth;
+  let vh = viewport.clientHeight;
   const offset = (target: PerspectiveCamera, amount: number) => {
-    const w = viewport.clientWidth;
-    const h = viewport.clientHeight;
+    const w = vw;
+    const h = vh;
     if (narrow.matches) target.setViewOffset(w, h, 0, h * amount, w, h);
     // Sous 1440 px, la colonne de texte pèse plus lourd dans la largeur : le véhicule se décale un peu plus.
     else target.setViewOffset(w, h, -w * (amount + Math.max(0, 1 - w / 1440) * 0.08), 0, w, h);
@@ -334,6 +411,11 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
 
   const drawCallout = (p: number) => {
     if (!callout || !calloutLine) return;
+    // Téléphone : pas de trait de rappel (la lumière bleue le remplace).
+    if (narrow.matches) {
+      if (callout.style.opacity !== '0') callout.style.opacity = '0';
+      return;
+    }
     const k = Math.round(p);
     const point = anchors[keys[k]] ?? shots[k]?.anchor;
     const origin = stops[k]?.querySelector<HTMLElement>('[data-callout-origin]');
@@ -343,8 +425,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       return;
     }
     anchor.set(...point).project(camera);
-    const ax = ((anchor.x + 1) / 2) * viewport.clientWidth;
-    const ay = ((1 - anchor.y) / 2) * viewport.clientHeight;
+    const ax = ((anchor.x + 1) / 2) * vw;
+    const ay = ((1 - anchor.y) / 2) * vh;
     const r = origin.getBoundingClientRect();
     calloutLine.setAttribute('d', `M${r.right},${r.bottom} H${r.right + 56} L${ax},${ay}`);
     for (const c of calloutRings) {
@@ -367,8 +449,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       return;
     }
     anchor.set(...point).project(camera);
-    const x = ((anchor.x + 1) / 2) * viewport.clientWidth;
-    const y = ((1 - anchor.y) / 2) * viewport.clientHeight;
+    const x = ((anchor.x + 1) / 2) * vw;
+    const y = ((1 - anchor.y) / 2) * vh;
     beacon.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
     beacon.style.opacity = strength.toFixed(3);
   };
@@ -384,6 +466,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   let wasNarrow = narrow.matches;
 
   const resize = () => {
+    vw = viewport.clientWidth;
+    vh = viewport.clientHeight;
     if (narrow.matches !== wasNarrow) {
       wasNarrow = narrow.matches;
       buildPath();
@@ -394,17 +478,18 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       }
     }
     renderer.setPixelRatio(dprSteps[dprLevel]);
-    renderer.setSize(viewport.clientWidth, viewport.clientHeight, false);
+    renderer.setSize(vw, vh, false);
     lights.visible = !backdrop && !narrow.matches;
     // Le sol selon le format. Ordinateur : la route s'arrête au début du trottoir, après la pierre de bordure,
     // la baie au-delà. Téléphone : la place marquée, l'esplanade et son garde-corps, la baie au-delà.
     const ground = (road.material as ShaderMaterial).uniforms;
     ground.uMobile.value = narrow.matches ? 1 : 0;
     ground.uCut.value = backdrop ? (narrow.matches ? EDGE - 0.05 : KERB - KERB_STONE) : -1000;
-    if (narrow.matches) scene.add(corniche.group);
-    else scene.remove(corniche.group);
+    if (narrow.matches) scene.add(phoneSet);
+    else scene.remove(phoneSet);
+    if (narrow.matches && !shadeReady) bakeShade();
     (lights.material as ShaderMaterial).uniforms.uPixelRatio.value = renderer.getPixelRatio();
-    const aspect = viewport.clientWidth / viewport.clientHeight;
+    const aspect = vw / vh;
     camera.aspect = aspect;
     // Desktop : sous 16:10, la largeur de champ reste constante — le véhicule garde sa place à côté du texte.
     camera.fov = narrow.matches
@@ -455,8 +540,11 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   let current = progress.read();
   const follow = createFollow(narrow);
   cameraAt(current);
-  // Compilation des shaders sans bloquer le fil principal (KHR_parallel_shader_compile).
+  // Compilation des shaders sans bloquer le fil principal (KHR_parallel_shader_compile). Les flammes (téléphone)
+  // sont compilées d'avance, puis masquées : aucun à-coup à leur première apparition.
+  flames.group.visible = true;
   await renderer.compileAsync(scene, camera);
+  flames.group.visible = false;
   performance.mark('stage:compiled', { detail: { programs: renderer.info.programs?.length } });
 
   // Envoi des textures au GPU une par image, plutôt qu'en un seul bloc au premier rendu.
@@ -469,6 +557,15 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   let raf = 0;
   let lastTime = 0;
   let firstFrame = true;
+  // Arrêt Échappement (téléphone) : les flammes, une seule fois, quand la caméra y arrive.
+  const rearStop = keys.indexOf('rear');
+  let flameStart = -1;
+  let flameDone = reduced.matches || rearStop < 0;
+  const setFlames = (t: number) => {
+    const power = flames.update(t);
+    roadUniforms.uFlame.value = power * 2.4;
+    return power;
+  };
 
   const render = () => {
     cameraAt(current);
@@ -502,12 +599,38 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       introDone = t >= 1;
       changed = true;
     }
-    // Téléphone : l'allumage, au premier geste (ou dès cette image si le geste l'a précédée).
-    if (narrow.matches && igniteWanted && lampT < LIT) {
-      igniteAt ||= now;
-      lampT = Math.min((now - igniteAt) / 1000, LIT);
-      updateLamp();
-      changed = true;
+    // Téléphone : la lanterne suit le haut de la page — allumage (papillotement, éclat) dès qu'on le quitte,
+    // extinction en fondu quand on y revient.
+    if (narrow.matches && !lampFrozen) {
+      const wanted = window.scrollY > 2;
+      if (wanted !== lampOn) {
+        lampOn = wanted;
+        if (lampOn && lampFade === 0) {
+          lampT = reduced.matches ? LIT : 0;
+          lampFade = reduced.matches ? 0 : 1;
+        }
+      }
+      if (lampOn ? lampT < LIT || lampFade < 1 : lampFade > 0) {
+        if (lampOn) {
+          lampT = Math.min(lampT + dt, LIT);
+          lampFade = Math.min(lampFade + dt / 0.3, 1);
+        } else {
+          lampFade = Math.max(lampFade - dt / 0.5, 0);
+          if (lampFade === 0) lampT = reduced.matches ? LIT : 0;
+        }
+        updateLamp();
+        changed = true;
+      }
+    }
+    // Arrêt Échappement (téléphone) : les flammes, une fois, dès que la caméra s'y pose (le scroll y est arrêté).
+    if (narrow.matches && !flameDone) {
+      if (flameStart < 0 && Math.abs(target - rearStop) < 0.2 && Math.abs(current - rearStop) < 0.12) flameStart = now;
+      if (flameStart >= 0) {
+        const t = (now - flameStart) / 1000;
+        setFlames(Math.min(t, FLAME_S));
+        flameDone = t >= FLAME_S;
+        changed = true;
+      }
     }
     if (!changed) {
       slowFrames = 0;
@@ -526,9 +649,10 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       dispatchEvent(new CustomEvent('meca:scene-ready'));
     }
 
-    if (dt > 1 / 24) slowFrames++;
+    // Téléphone : la fluidité d'abord — un cran de définition en moins dès que les images passent sous ~45 i/s.
+    if (dt > (narrow.matches ? 1 / 45 : 1 / 24)) slowFrames++;
     else slowFrames = Math.max(0, slowFrames - 1);
-    if (slowFrames > 8 && dprLevel < dprSteps.length - 1) {
+    if (slowFrames > (narrow.matches ? 12 : 8) && dprLevel < dprSteps.length - 1) {
       dprLevel++;
       slowFrames = 0;
       resize();
@@ -562,9 +686,12 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
           dispatchEvent(new CustomEvent('meca:intro-finish'));
           current = progress.read();
           introDone = true;
-          // Téléphone : `arrival: 0` pose la nuit d'avant l'allumage (affiche) ; sinon, lampadaires allumés.
-          igniteWanted = options.arrival !== 0;
-          lampT = igniteWanted ? LIT : 0;
+          // Téléphone : la lanterne posée selon la page — éteinte en haut (et avec `arrival: 0`, l'affiche),
+          // allumée ailleurs.
+          lampFrozen = false;
+          lampOn = options.arrival !== 0 && window.scrollY > 2;
+          lampFade = lampOn ? 1 : 0;
+          lampT = lampOn || reduced.matches ? LIT : 0;
           applyIntro(options.arrival ?? 1);
           render();
           canvas.classList.add('is-ready');
@@ -572,11 +699,20 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
         },
         // Allumage (téléphone), image par image : l'état `t` secondes après le premier geste, figé.
         lamp(t: number) {
-          igniteWanted = false;
+          lampFrozen = true;
+          lampOn = true;
+          lampFade = 1;
           lampT = t;
           updateLamp();
           render();
           return Number(lampUniforms.uLamp.value.toFixed(2));
+        },
+        // Flammes de l'arrêt Échappement (téléphone), image par image : l'état `t` secondes après leur départ.
+        flame(t: number) {
+          flameDone = true;
+          const power = setFlames(t);
+          render();
+          return Number(power.toFixed(2));
         },
         // Coût d'une image (ms), sol affiché ou non : readPixels attend la fin du rendu GPU.
         bench(frames = 12, withRoad = true) {
@@ -713,10 +849,15 @@ uniform float uArrival;
 uniform float uHeadlights;
 uniform float uCut;
 uniform float uMobile; // 1 : téléphone — place marquée, esplanade, lampadaires ; 0 : ordinateur
-uniform float uLamp;   // téléphone : niveau des lampadaires (allumés au premier geste)
+uniform float uLamp;   // téléphone : niveau des lampadaires (allumés hors du haut de la page)
 uniform float uOut;    // extinction finale (1 → 0)
 uniform vec3 uLampTint;
 uniform float uMoon;
+uniform sampler2D uShade; // téléphone : ombre portée du véhicule par la lanterne voisine (R nette, G adoucie)
+uniform vec4 uShadeArea;  // son emprise au sol : x0, z0, 1 / largeur, 1 / profondeur
+uniform vec4 uCarBox;     // emprise du véhicule : centre (x, z), demi-côtés
+uniform float uFlame;     // téléphone : lueur des flammes d'échappement
+uniform vec2 uFlameAt;
 uniform sampler2D uNoise;
 varying vec3 vWorld;
 
@@ -734,6 +875,10 @@ const vec2 AIM = vec2(-0.641, -0.768);
 const vec2 PERP = vec2(0.768, -0.641);
 // Demi-largeur du véhicule vue des phares : son emprise (0,98 × 2,4 m) projetée en travers du faisceau.
 const float SPREAD = 2.29;
+// Téléphone : flaque d'une lanterne — éclairement à son pied, hauteur de la source et portée (au carré).
+const float LAMP_POWER = ${glsl(LAMP_POWER)};
+const float LAMP_FOOT2 = ${glsl(LAMP_FOOT * LAMP_FOOT)};
+const float LAMP_SPREAD2 = ${glsl(LAMP_SPREAD * LAMP_SPREAD)};
 
 // Grain de matière à l'échelle donnée (texture pavable ; les mipmaps l'adoucissent au loin).
 float grain(vec2 p, float scale) {
@@ -760,33 +905,55 @@ float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
-void main() {
-  vec2 p = vWorld.xz;
-  // Au-delà du sol, la baie en contrebas : ordinateur, dès la bordure du trottoir ; téléphone, au garde-corps.
-  if (p.x < uCut) discard;
-  float mobile = step(0.5, uMobile);
-  float aa = fwidth(p.x) + fwidth(p.y);
+// Ordinateur : bitume, bordure et trottoir ; lampadaires de la promenade tous les 24 m ; phares du mécanicien ;
+// au-delà du trottoir, la mer, noire.
+vec3 desk(vec2 p) {
   // Matière : bitume (usure en grandes plages, reprises, granulat) à faible contraste, jamais une trame.
   float wear = grain(p, 0.0026) * 0.6 + grain(p, 0.013) * 0.4;
   float aggregate = grain(p, 0.26) * 0.6 + grain(p, 0.65) * 0.4;
   float albedo = 0.035 * mix(0.75, 1.25, wear) * mix(0.82, 1.18, aggregate);
+  // La bordure du trottoir : une pierre claire.
+  float pavement = smoothstep(KERB + 0.02, KERB - 0.02, p.x);
+  albedo = mix(albedo, 0.1 * mix(0.9, 1.1, grain(p, 0.4)) * mix(0.9, 1.1, aggregate), pavement);
+  // Caniveau plus sombre au pied de la bordure ; arête de la bordure qui accroche la lumière.
+  albedo *= 1.0 - 0.3 * smoothstep(KERB + 0.35, KERB + 0.05, p.x) * (1.0 - pavement);
+  float edge = (1.0 - smoothstep(0.0, 0.03 + length(fwidth(p)), abs(p.x - KERB))) * 0.5;
+  // Lumière : nuit (la chaussée non éclairée disparaît), lampadaires de la promenade, phares du mécanicien.
+  vec3 light = vec3(0.06, 0.068, 0.09);
+  for (int k = 0; k < 4; k++) {
+    vec2 r = p - vec2(-2.7, 3.0 - float(k) * 24.0);
+    light += vec3(1.0, 0.8, 0.58) * 0.9 * exp(-dot(r, r) / 20.0);
+  }
+  vec2 side = PERP * 0.72;
+  vec2 lamp = VAN - AIM * 9.0 * (1.0 - uArrival);
+  light += vec3(0.85, 0.9, 1.0) * 1.7 * (beam(p, lamp + side) + beam(p, lamp - side)) * smoothstep(0.0, 0.35, uArrival) * uHeadlights;
+  vec3 color = albedo * light * (1.0 + 2.5 * edge);
+  return color * (1.0 - smoothstep(-4.5, -6.5, p.x) * 0.85);
+}
 
-  // Téléphone : la place marquée — ligne de rive continue, séparations des places (le véhicule au milieu de la
-  // sienne), axe de la chaussée en tirets ; peinture blanche un peu usée.
+// Téléphone : la place marquée, la bordure, l'esplanade ; la nuit de pleine lune ; les lanternes, vraies sources
+// (optique routière : la flaque porte jusqu'au véhicule, un surcroît à leur pied), la voisine y dessinant son ombre
+// portée ; le lampadaire d'en face, discret ; la lueur des flammes d'échappement.
+vec3 phone(vec2 p) {
+  float aa = fwidth(p.x) + fwidth(p.y);
+  float wear = grain(p, 0.0026) * 0.6 + grain(p, 0.013) * 0.4;
+  float aggregate = grain(p, 0.26) * 0.6 + grain(p, 0.65) * 0.4;
+  float albedo = 0.035 * mix(0.75, 1.25, wear) * mix(0.82, 1.18, aggregate);
+  // Marquage : ligne de rive continue, séparations des places (le véhicule au milieu de la sienne), axe de la
+  // chaussée en tirets — peinture routière neuve, d'un blanc franc.
   float onRoad = smoothstep(KERB - 0.01, KERB + 0.01, p.x);
   float rive = 1.0 - smoothstep(0.06, 0.06 + aa, abs(p.x - BAY_LINE));
   float between = abs(fract((p.y - BAY_LENGTH * 0.5) / BAY_LENGTH + 0.5) - 0.5) * BAY_LENGTH;
   float bays = (1.0 - smoothstep(0.06, 0.06 + aa, between)) * onRoad * (1.0 - smoothstep(BAY_LINE - 0.01, BAY_LINE + 0.01, p.x));
   float dash = (1.0 - smoothstep(0.06, 0.06 + aa, abs(p.x - CENTER_LINE))) * step(fract(p.y / 7.0), 0.45);
-  float paint = max(max(rive, bays), dash) * mobile * mix(0.7, 1.0, grain(p, 0.9));
-  albedo = mix(albedo, 0.42, paint);
-
+  float paint = max(max(rive, bays), dash) * mix(0.92, 1.0, grain(p, 0.9));
+  albedo = mix(albedo, 0.82, paint);
   // La bordure du trottoir : une pierre claire.
   float pavement = smoothstep(KERB + 0.02, KERB - 0.02, p.x);
   albedo = mix(albedo, 0.1 * mix(0.9, 1.1, grain(p, 0.4)) * mix(0.9, 1.1, aggregate), pavement);
-  // Téléphone : au-delà, l'esplanade — dalles de 1,2 × 0,6 m en quinconce, aux joints longs tendus vers le
-  // garde-corps et la baie (ils mènent le regard) ; chaque dalle un peu différente.
-  float plaza = smoothstep(KERB - KERB_STONE + 0.01, KERB - KERB_STONE - 0.01, p.x) * mobile;
+  // Au-delà, l'esplanade — dalles de 1,2 × 0,6 m en quinconce, aux joints longs tendus vers le garde-corps et la
+  // baie (ils mènent le regard) ; chaque dalle un peu différente.
+  float plaza = smoothstep(KERB - KERB_STONE + 0.01, KERB - KERB_STONE - 0.01, p.x);
   vec2 slab = vec2((KERB - KERB_STONE - p.x) / 1.2, p.y / 0.6);
   slab.x += step(0.5, fract(slab.y * 0.5)) * 0.5;
   vec2 f = fract(slab);
@@ -798,25 +965,40 @@ void main() {
   albedo *= 1.0 - 0.3 * smoothstep(KERB + 0.35, KERB + 0.05, p.x) * (1.0 - pavement);
   float edge = (1.0 - smoothstep(0.0, 0.03 + length(fwidth(p)), abs(p.x - KERB))) * 0.5;
 
-  // Lumière : nuit (la chaussée non éclairée disparaît) ; lampadaires — de la promenade tous les 24 m
-  // (ordinateur) ; de l'esplanade et de l'autre trottoir, allumés au premier geste, leur flaque s'élargissant
-  // en chauffant (téléphone) — ; phares du mécanicien (ordinateur) ; clair de lune (téléphone).
-  vec3 light = vec3(0.06, 0.068, 0.09) + vec3(0.035, 0.045, 0.07) * uMoon * mobile;
-  float spread = 11.0 + 3.0 * min(uLamp, 1.0);
+  // Ombre portée du véhicule par la lanterne voisine : nette au contact, adoucie en s'en éloignant (pénombre).
+  vec2 shadow = texture2D(uShade, clamp((p - uShadeArea.xy) * uShadeArea.zw, 0.0, 1.0)).rg;
+  float shade = mix(shadow.r, shadow.g, smoothstep(0.0, 2.0, length(max(abs(p - uCarBox.xy) - uCarBox.zw, 0.0))));
+  vec3 light = vec3(0.06, 0.068, 0.09) + vec3(0.035, 0.045, 0.07) * uMoon;
+  float lamp = uLamp * uOut;
   for (int k = 0; k < 4; k++) {
-    vec2 r = p - vec2(-2.7, 3.0 - float(k) * 24.0);
     vec2 s = p - LAMPS[k];
-    light += mix(vec3(1.0, 0.8, 0.58) * 0.9 * exp(-dot(r, r) / 20.0), uLampTint * 1.25 * uLamp * uOut * exp(-dot(s, s) / spread), mobile);
+    float r2 = dot(s, s);
+    float fall = LAMP_FOOT2 / (r2 + LAMP_FOOT2);
+    float wide = r2 / LAMP_SPREAD2;
+    float pool = 0.4 * fall * sqrt(fall) + 0.6 / (1.0 + wide * wide);
+    // Dans l'ombre, un peu de lumière renvoyée par l'alentour éclairé : jamais un noir plein.
+    light += uLampTint * LAMP_POWER * lamp * pool * (k == 0 ? 1.0 - 0.9 * shade : 1.0);
   }
   vec2 o = p - ROAD_LAMP;
-  light += uLampTint * 1.1 * uLamp * uOut * exp(-dot(o, o) / (spread + 4.0)) * mobile;
-  vec2 side = PERP * 0.72;
-  vec2 lamp = VAN - AIM * 9.0 * (1.0 - uArrival);
-  light += vec3(0.85, 0.9, 1.0) * 1.7 * (beam(p, lamp + side) + beam(p, lamp - side)) * smoothstep(0.0, 0.35, uArrival) * uHeadlights * (1.0 - mobile);
-
+  light += uLampTint * 0.6 * lamp * exp(-dot(o, o) / 18.0);
+  vec2 q = (p - uFlameAt) * vec2(0.9, 1.6);
+  light += vec3(1.0, 0.42, 0.12) * uFlame * exp(-dot(q, q) / 0.35);
   vec3 color = albedo * light * (1.0 + 2.5 * edge);
-  // (Ordinateur) au-delà du trottoir, la mer, noire ; au loin, la chaussée se fond dans la nuit.
-  color *= 1.0 - smoothstep(-4.5, -6.5, p.x) * 0.85 * (1.0 - mobile);
+  // La peinture routière (billes de verre) renvoie la moindre lumière : les lignes restent blanches dans la nuit.
+  color += paint * vec3(0.05, 0.052, 0.056);
+  // Au pied des lanternes, les hautes lumières s'adoucissent au lieu d'être écrêtées.
+  vec3 over = max(color - 0.7, 0.0);
+  return min(color, 0.7) + 0.3 * (1.0 - exp(-over / 0.3));
+}
+
+void main() {
+  vec2 p = vWorld.xz;
+  // Au-delà du sol, la baie en contrebas : ordinateur, dès la bordure du trottoir ; téléphone, au garde-corps.
+  if (p.x < uCut) discard;
+  vec3 color;
+  if (uMobile > 0.5) color = phone(p);
+  else color = desk(p);
+  // Au loin, le sol se fond dans la nuit.
   color = mix(color, uInk, smoothstep(14.0, 42.0, length(vWorld - cameraPosition)));
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
@@ -861,6 +1043,12 @@ function street() {
       uHeadlights: { value: 1 },
       uCut: { value: -1000 },
       uMobile: { value: 0 },
+      // Téléphone : ombre portée (castShadow ; aucune ombre en attendant), lueur des flammes.
+      uShade: { value: Object.assign(new DataTexture(new Uint8Array(4), 1, 1), { needsUpdate: true }) },
+      uShadeArea: { value: new Vector4(0, 0, 1, 1) },
+      uCarBox: { value: new Vector4(0, 0, 1, 1) },
+      uFlame: { value: 0 },
+      uFlameAt: { value: new Vector2() },
       uNoise: { value: grainTexture() },
     },
     vertexShader: /* glsl */ `
@@ -912,10 +1100,10 @@ void main() {
   vec3 shine = vec3(0.0);
   for (int k = 0; k < 4; k++) {
     vec3 d = HEADS[k] - vWorld;
-    float fall = exp(-dot(d, d) / 26.0);
+    float fall = exp(-dot(d, d) / 34.0);
     vec3 l = normalize(d);
-    light += uLampTint * 1.4 * fall * (0.3 + 0.7 * max(dot(n, l), 0.0)) * uLamp * uOut;
-    shine += uLampTint * fall * pow(max(dot(reflect(-l, n), view), 0.0), 24.0) * uLamp * uOut;
+    light += uLampTint * 2.6 * fall * (0.3 + 0.7 * max(dot(n, l), 0.0)) * uLamp * uOut;
+    shine += uLampTint * 1.6 * fall * pow(max(dot(reflect(-l, n), view), 0.0), 24.0) * uLamp * uOut;
   }
   vec3 color = uAlbedo * light + uShine * shine;
   color = mix(color, uInk, smoothstep(14.0, 42.0, length(vWorld - cameraPosition)));
@@ -933,7 +1121,7 @@ varying vec3 vNormal;
 void main() {
   float h = clamp(vWorld.y / ${glsl(LAMP_HEIGHT)}, 0.0, 1.0);
   float facing = abs(dot(normalize(vNormal), normalize(cameraPosition - vWorld)));
-  float a = 0.045 * h * h * facing * facing * uLamp * uOut;
+  float a = 0.085 * h * h * facing * facing * uLamp * uOut;
   gl_FragColor = vec4(uLampTint * a, 1.0);
   #include <colorspace_fragment>
 }`;
@@ -993,14 +1181,14 @@ function promenade(lamp: LampUniforms) {
   };
   group.add(row(0.018, 0.68, 0.12), row(0.06, 0.72, 2.4));
 
-  const lens = new MeshBasicMaterial({ color: new Color(1, 0.86, 0.64).multiplyScalar(2.4) });
+  const lens = new MeshBasicMaterial({ color: new Color(1, 0.86, 0.64).multiplyScalar(3.2) });
   const halo = new SpriteMaterial({
     map: glowTexture(),
     color: 0xffc58a,
     blending: AdditiveBlending,
     depthWrite: false,
     transparent: true,
-    opacity: 0.6,
+    opacity: 0.85,
   });
   const glows: Sprite[] = [];
   for (const z of LAMP_Z) {
@@ -1016,7 +1204,7 @@ function promenade(lamp: LampUniforms) {
     glass.rotation.x = Math.PI / 2;
     glass.position.set(x, LAMP_HEIGHT - 0.17, z);
     const glow = new Sprite(halo);
-    glow.scale.setScalar(2.4);
+    glow.scale.setScalar(2.8);
     glow.position.set(x, LAMP_HEIGHT - 0.25, z);
     glows.push(glow);
     group.add(pole, arm, head, glass, glow);
@@ -1024,7 +1212,7 @@ function promenade(lamp: LampUniforms) {
   // Le cône de lumière de la lanterne voisine du véhicule.
   const coneHeight = LAMP_HEIGHT - 0.25;
   const cone = new Mesh(
-    new ConeGeometry(1.9, coneHeight, 40, 1, true),
+    new ConeGeometry(2.3, coneHeight, 40, 1, true),
     new ShaderMaterial({
       uniforms: { ...lamp },
       vertexShader: PIECE_VERTEX,
@@ -1042,8 +1230,8 @@ function promenade(lamp: LampUniforms) {
   /** Niveau des lanternes (0 : éteintes) : verre, halo et son ampleur. */
   const setLevel = (level: number) => {
     lens.color.copy(lensColor).multiplyScalar(Math.max(level, 0.02));
-    halo.opacity = 0.6 * level;
-    for (const glow of glows) glow.scale.setScalar(2.4 * (0.85 + 0.15 * Math.min(level, 1.2)));
+    halo.opacity = 0.85 * level;
+    for (const glow of glows) glow.scale.setScalar(2.8 * (0.85 + 0.15 * Math.min(level, 1.2)));
   };
   return { group, setLevel };
 }
@@ -1179,4 +1367,226 @@ function contactShadow(model: Object3D) {
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.set((box.min.x + box.max.x) / 2, 0.004, (box.min.z + box.max.z) / 2);
   return mesh;
+}
+
+/**
+ * Téléphone : l'ombre portée du véhicule par une lanterne, au sol. La silhouette est projetée depuis la lanterne sur
+ * le plan du sol (exacte : source ponctuelle, sol plat ; les vitres laissent passer la lumière), puis adoucie deux
+ * fois — pénombre de contact (R) et pénombre lointaine (G), que le sol mêle selon la distance au véhicule.
+ * Calculée une fois (véhicule et lanterne immobiles) : le sol la lit en une texture, aucune ombre en temps réel.
+ */
+function castShadow(renderer: WebGLRenderer, model: Object3D, light: Vector3, area: readonly number[]) {
+  const [x0, z0, x1, z1] = area;
+  const width = 480;
+  const height = Math.round((width * (z1 - z0)) / (x1 - x0));
+  const target = () => new WebGLRenderTarget(width, height, { depthBuffer: false });
+  const [silhouette, across, result] = [target(), target(), target()];
+  const flat = new OrthographicCamera();
+  const projected = new ShaderMaterial({
+    uniforms: { uLight: { value: light }, uArea: { value: new Vector4(x0, z0, 1 / (x1 - x0), 1 / (z1 - z0)) } },
+    vertexShader: /* glsl */ `
+      uniform vec3 uLight;
+      uniform vec4 uArea;
+      void main() {
+        vec3 w = (modelMatrix * vec4(position, 1.0)).xyz;
+        vec2 g = uLight.xz + (w.xz - uLight.xz) * uLight.y / max(uLight.y - w.y, 0.05);
+        gl_Position = vec4((g - uArea.xy) * uArea.zw * 2.0 - 1.0, 0.0, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      void main() {
+        gl_FragColor = vec4(1.0);
+      }`,
+    side: DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const caster = new Scene();
+  model.updateMatrixWorld(true);
+  model.traverse((node) => {
+    const mesh = node as Mesh;
+    const material = mesh.material as MeshStandardMaterial;
+    if (!mesh.isMesh || !mesh.visible || (material.transparent && material.opacity < 0.9)) return;
+    const proxy = new Mesh(mesh.geometry, projected);
+    proxy.matrixAutoUpdate = false;
+    proxy.matrix.copy(mesh.matrixWorld);
+    proxy.frustumCulled = false;
+    caster.add(proxy);
+  });
+  const blur = new ShaderMaterial({
+    uniforms: { uMap: { value: null }, uStep: { value: new Vector2() } },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uMap;
+      uniform vec2 uStep;
+      varying vec2 vUv;
+      void main() {
+        // Gaussienne à 13 prises : R serrée (pénombre de contact), G large (pénombre lointaine).
+        vec2 sum = vec2(0.0);
+        float total = 0.0;
+        for (int i = -6; i <= 6; i++) {
+          float w = exp(-float(i * i) / 18.0);
+          sum += w * vec2(texture2D(uMap, vUv + uStep * float(i) * 0.5).r, texture2D(uMap, vUv + uStep * float(i) * 2.0).g);
+          total += w;
+        }
+        gl_FragColor = vec4(sum / total, 0.0, 1.0);
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const quad = new Mesh(new PlaneGeometry(2, 2), blur);
+  quad.frustumCulled = false;
+  const pass = new Scene().add(quad);
+
+  const previous = renderer.getRenderTarget();
+  const clearColor = renderer.getClearColor(new Color());
+  const clearAlpha = renderer.getClearAlpha();
+  renderer.setClearColor(0x000000, 1);
+  renderer.setRenderTarget(silhouette);
+  renderer.render(caster, flat);
+  blur.uniforms.uMap.value = silhouette.texture;
+  blur.uniforms.uStep.value.set(1 / width, 0);
+  renderer.setRenderTarget(across);
+  renderer.render(pass, flat);
+  blur.uniforms.uMap.value = across.texture;
+  blur.uniforms.uStep.value.set(0, 1 / height);
+  renderer.setRenderTarget(result);
+  renderer.render(pass, flat);
+  renderer.setRenderTarget(previous);
+  renderer.setClearColor(clearColor, clearAlpha);
+  silhouette.dispose();
+  across.dispose();
+  projected.dispose();
+  blur.dispose();
+  quad.geometry.dispose();
+  return result.texture;
+}
+
+/** Une flamme : la gerbe (lathe unitaire) mise à la section de l'embout et à sa longueur, qui ondule vers la pointe. */
+const FLAME_VERTEX = /* glsl */ `
+uniform float uTime;
+uniform float uLength;
+uniform vec2 uTip;
+uniform float uSeed;
+varying vec2 vUv;
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main() {
+  float s = position.y;
+  vec3 p = vec3(position.x * uTip.x, s * uLength, position.z * uTip.y);
+  float sway = sin(s * 7.0 - uTime * 41.0 + uSeed) * 0.6 + sin(s * 13.0 - uTime * 67.0 + uSeed * 2.1) * 0.4;
+  p.x += sway * s * s * 0.06;
+  p.z += cos(s * 9.0 - uTime * 53.0 + uSeed) * s * s * 0.035;
+  vUv = uv;
+  vec4 world = modelMatrix * vec4(p, 1.0);
+  vWorld = world.xyz;
+  vNormal = normalize(mat3(modelMatrix) * vec3(normal.x / uTip.x, normal.y / max(uLength, 0.01), normal.z / uTip.y));
+  gl_Position = projectionMatrix * viewMatrix * world;
+}`;
+
+/** Bleu au débouché, jaune vif, orange, pointe rouge qui se déchire ; cœur dense, bords fondus (additif). */
+const FLAME_FRAGMENT = /* glsl */ `
+uniform float uTime;
+uniform float uPower;
+uniform float uSeed;
+varying vec2 vUv;
+varying vec3 vWorld;
+varying vec3 vNormal;
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+void main() {
+  float s = vUv.y;
+  // Turbulence qui file vers la pointe (sans couture autour de la gerbe).
+  float a = vUv.x * 6.2832;
+  vec2 q = vec2(cos(a), sin(a)) * 1.4 + vec2(uSeed, s * 4.0 - uTime * 16.0);
+  float n = noise(q) * 0.6 + noise(q * 2.3 + 7.1) * 0.4;
+  float facing = abs(dot(normalize(vNormal), normalize(cameraPosition - vWorld)));
+  float body = pow(facing, 1.1) * (1.0 - smoothstep(0.3 + 0.45 * n, 1.0, s)) * smoothstep(0.0, 0.05, s);
+  vec3 color = mix(vec3(0.55, 0.75, 1.6), vec3(2.4, 1.7, 0.75), smoothstep(0.02, 0.16, s));
+  color = mix(color, vec3(2.0, 0.62, 0.14), smoothstep(0.2, 0.55, s));
+  color = mix(color, vec3(1.1, 0.16, 0.04), smoothstep(0.55, 0.9, s));
+  gl_FragColor = vec4(color * body * (0.45 + 0.85 * n) * uPower, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+/**
+ * Téléphone, arrêt Échappement : une flamme par sortie — gerbe en volume, à cœur bleu au débouché —, un éclat rond
+ * à chaque débouché et une lueur orangée (lumière de scène) sur l'arrière du véhicule. Invisibles au repos.
+ */
+function exhaustFlames({ tips, size }: Exhaust) {
+  const group = new Group();
+  group.visible = false;
+  // La gerbe s'évase après le débouché (jusqu'à ~1,6 fois l'embout), puis s'effile.
+  const profile = Array.from({ length: 15 }, (_, j) => {
+    const s = j / 14;
+    return new Vector2((0.6 + 1.7 * MathUtils.smoothstep(s, 0, 0.35)) * (1 - s) ** 0.8, s);
+  });
+  const geometry = new LatheGeometry(profile, 16);
+  const glow = new SpriteMaterial({
+    map: glowTexture(),
+    color: 0xffb070,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0,
+  });
+  const materials = tips.map((tip, i) => {
+    const material = new ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uPower: { value: 0 },
+        uLength: { value: 0.2 },
+        uTip: { value: new Vector2(size[0] / 2, size[1] / 2) },
+        uSeed: { value: i * 1.7 },
+      },
+      vertexShader: FLAME_VERTEX,
+      fragmentShader: FLAME_FRAGMENT,
+      transparent: true,
+      depthWrite: false,
+      blending: AdditiveBlending,
+      side: DoubleSide,
+    });
+    const flame = new Mesh(geometry, material);
+    flame.position.set(...tip);
+    // Le long de l'échappement (vers l'arrière), un rien vers le sol.
+    flame.rotation.x = -Math.PI / 2 - 0.05;
+    flame.frustumCulled = false;
+    const spark = new Sprite(glow);
+    spark.position.set(tip[0], tip[1], tip[2] - 0.04);
+    spark.scale.setScalar(Math.max(...size) * 4.5);
+    group.add(flame, spark);
+    return material;
+  });
+  const center = tips.reduce((sum, tip) => sum.add(new Vector3(...tip)), new Vector3()).divideScalar(tips.length);
+  const light = new PointLight(0xff8a3a, 0, 0, 2);
+  light.position.set(center.x, center.y + 0.05, center.z - 0.3);
+  const share = [1, 0.9, 0.95, 0.85];
+  /** État `t` s après le départ ; renvoie la force moyenne (lueur du sol). */
+  const update = (t: number) => {
+    let total = 0;
+    materials.forEach((material, i) => {
+      const power = burst(t - i * 0.014) * share[i % share.length];
+      material.uniforms.uPower.value = power;
+      material.uniforms.uTime.value = t;
+      material.uniforms.uLength.value = 0.2 + 0.5 * power;
+      total += power / materials.length;
+    });
+    glow.opacity = Math.min(total * 1.3, 1);
+    light.intensity = FLAME_LIGHT * total;
+    group.visible = total > 0.002;
+    return total;
+  };
+  return { group, light, update, at: new Vector2(center.x, center.z - 0.35) };
 }

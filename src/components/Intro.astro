@@ -1,21 +1,40 @@
 ---
 /**
  * Entrée : « MECA RIVIERA — PRESENT » sur la nuit, le temps que la première scène soit réellement prête
- * (première image de la 3D rendue ; sans WebGL, l'affiche décodée). Ni pourcentage, ni barre, ni spinner.
- * Elle se lève dès que la scène est prête — jamais avant une seconde de lecture —, au plus tard après 5 s
- * (l'affiche, identique à la première image de la 3D, prend alors le relais et la 3D la remplace à son
- * arrivée), et aussitôt à la moindre interaction (défilement, touche, toucher). L'arrivée des phares attend
- * qu'elle se lève (événement meca:enter). Sans script, ou arrivée par un lien vers une section : aucune entrée.
+ * (première image de la 3D rendue ; sans WebGL, l'affiche décodée). Ordinateur : ni pourcentage, ni barre ; elle
+ * se lève dès que la scène est prête — jamais avant une seconde de lecture —, au plus tard après 5 s (l'affiche,
+ * identique à la première image de la 3D, prend alors le relais et la 3D la remplace à son arrivée), et aussitôt à
+ * la moindre interaction ; arrivée par un lien vers une section : aucune entrée. Téléphone : l'entrée à chaque
+ * arrivée (rechargée, rouverte, revenue par l'historique : on repart du haut de la page), 5 s pleines, une fine
+ * barre blanche qui se remplit, la page immobile pendant ce temps. L'arrivée des phares attend qu'elle se lève
+ * (événement meca:enter). Sans script : aucune entrée.
  */
 ---
 
 <script is:inline>
-  if (!location.hash) document.documentElement.classList.add('has-intro');
+  (() => {
+    // Téléphone : l'entrée à chaque arrivée, même rechargée depuis une ancre ou une position de défilement
+    // mémorisée — on repart du haut de la page. Ordinateur : sans ancre seulement.
+    const phone = matchMedia('(max-width: 899px)').matches;
+    if (phone) {
+      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+      scrollTo(0, 0);
+    }
+    if (phone || !location.hash) document.documentElement.classList.add('has-intro');
+    if (phone) {
+      document.documentElement.classList.add('intro-lock');
+      // Page restaurée telle quelle (retour par l'historique) : rechargée, l'entrée avec.
+      addEventListener('pageshow', (event) => event.persisted && location.reload());
+    }
+  })();
 </script>
 <div class="intro" data-intro aria-hidden="true" data-nosnippet>
   <p class="intro__card">
     <span class="intro__brand"><span class="meca">MECA</span> RIVIERA</span>
     <span class="intro__present">PRESENT</span>
+    <!-- Téléphone : une fine barre blanche se remplit pendant les 5 s de l'entrée. -->
+    <span class="intro__bar"><span></span></span>
   </p>
 </div>
 <script is:inline>
@@ -24,7 +43,9 @@
     const intro = document.querySelector('[data-intro]');
     if (!intro) return;
     if (!root.classList.contains('has-intro')) return intro.remove();
-    const MIN = 1300; // lecture du titre, même quand tout est déjà en cache
+    // Téléphone : l'entrée dure ses 5 s (la barre), sans être écourtée par un geste.
+    const phone = matchMedia('(max-width: 899px)').matches;
+    const MIN = phone ? 5000 : 1300; // lecture du titre, même quand tout est déjà en cache
     const MAX = 5000; // au-delà, l'affiche prend le relais : la page n'attend pas une ressource lente
     const start = performance.now();
     let leaving = false;
@@ -32,6 +53,7 @@
       if (leaving) return;
       leaving = true;
       clearTimeout(timer);
+      root.classList.remove('intro-lock');
       dispatchEvent(new CustomEvent('meca:enter'));
       const done = () => {
         intro.remove();
@@ -57,7 +79,7 @@
     );
     // Contrôle QA (captures) : levée immédiate, sans transition.
     addEventListener('meca:intro-finish', () => leave(true), { once: true });
-    for (const type of ['wheel', 'touchstart', 'keydown', 'scroll']) addEventListener(type, () => leave(false), { passive: true, once: true });
+    if (!phone) for (const type of ['wheel', 'touchstart', 'keydown', 'scroll']) addEventListener(type, () => leave(false), { passive: true, once: true });
     // Le titre n'apparaît qu'avec sa police (préchargée) : jamais de changement de fonte à l'écran.
     Promise.race([document.fonts ? document.fonts.ready : null, new Promise((resolve) => setTimeout(resolve, 800))]).then(() =>
       intro.classList.add('is-set'),
@@ -129,6 +151,46 @@
     margin-right: -0.62em;
     color: var(--blue-soft);
     transition-delay: 0.45s;
+  }
+
+  /* Téléphone : la barre de chargement (5 s, linéaire) ; la page ne défile pas pendant l'entrée. */
+  .intro__bar {
+    display: none;
+  }
+
+  @media (max-width: 899px) {
+    :global(html.intro-lock) {
+      overflow: hidden;
+    }
+
+    .intro {
+      touch-action: none;
+    }
+
+    .intro__bar {
+      display: block;
+      width: 7.5rem;
+      height: 2px;
+      margin-top: 0.75rem;
+      background: rgb(242 241 238 / 0.14);
+      overflow: hidden;
+    }
+
+    .intro__bar span {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #fff;
+      transform: scaleX(0);
+      transform-origin: 0 50%;
+      animation: intro-load 5s linear forwards;
+    }
+  }
+
+  @keyframes intro-load {
+    to {
+      transform: scaleX(1);
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

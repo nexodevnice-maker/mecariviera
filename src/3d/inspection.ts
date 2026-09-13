@@ -327,8 +327,8 @@ void main() {
   float aa = fwidth(car.y) * 1.5 + 0.003;
   float side = (1.0 - smoothstep(0.05, 0.05 + aa, abs(fract(car.y / 2.6) - 0.5) * 2.6)) * (1.0 - smoothstep(2.85, 2.9, abs(car.x)));
   float end = (1.0 - smoothstep(0.05, 0.05 + fwidth(car.x) * 1.5 + 0.003, abs(car.x - 2.9))) * (1.0 - smoothstep(6.4, 6.5, abs(car.y)));
-  float paint = max(side, end) * mix(0.7, 1.0, noise(vWorld.xz * 24.0));
-  color = mix(color, vec3(0.3, 0.31, 0.34), paint * 0.85);
+  float paint = max(side, end) * mix(0.92, 1.0, noise(vWorld.xz * 24.0));
+  color = mix(color, vec3(0.8, 0.81, 0.82), paint);
   // Ombre de la voiture sur le sol : occlusion sous la carrosserie (contour mesuré), plus dense au contact.
   vec2 q = abs(car) - vec2(1.99, 0.88) + 0.3;
   float footprint = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.3;
@@ -508,7 +508,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   };
 
   // Définition : ordinateur, 1,75 au plus ; téléphone, jusqu'à 2, baissée d'un cran si les images ralentissent.
-  const phoneSteps = [2, 1.5, 1.25].map((v) => Math.min(window.devicePixelRatio, v));
+  const phoneSteps = [2, 1.5, 1.25, 1].map((v) => Math.min(window.devicePixelRatio, v));
   let phoneLevel = 0;
   let slowFrames = 0;
   const pixelRatio = () => (narrow.matches ? phoneSteps[phoneLevel] : Math.min(window.devicePixelRatio, 1.75));
@@ -578,9 +578,10 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     render();
     canvas.classList.add('is-ready');
     if (!narrow.matches) return;
-    if (dt > 1 / 24) slowFrames++;
+    // La fluidité d'abord : un cran de définition en moins dès que les images passent sous ~45 i/s.
+    if (dt > 1 / 45) slowFrames++;
     else slowFrames = Math.max(0, slowFrames - 1);
-    if (slowFrames > 8 && phoneLevel < phoneSteps.length - 1) {
+    if (slowFrames > 12 && phoneLevel < phoneSteps.length - 1) {
       phoneLevel++;
       slowFrames = 0;
       resize();
