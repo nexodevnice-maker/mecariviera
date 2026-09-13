@@ -229,3 +229,9 @@ Sous 900 px uniquement ; l'ordinateur reste tel quel (scène identique au pixel 
   derrière lui ; sans transformation, les textes restent nets.
 - **Garde** : le parcours des deux scènes est borné (l'amorti pouvait en dépasser le début un instant et
   interrompre le rendu de l'inspection).
+- **Découpe refaite (même jour)** : le sol du scan n'est pas à zéro mais un plan incliné, à 4–14 cm selon l'endroit
+  (ajusté sur 9 000 sommets du scan : y = 0,093 + 0,019 × longueur + 0,013 × largeur, ±7 mm) — la coupe à hauteur
+  fixe en laissait une bordure grise, et la place, posée à zéro, faisait flotter la voiture. Désormais : retiré ce
+  qui est à moins de 3,5 cm au-dessus de ce plan ; hors du contour mesuré de la carrosserie (3,98 × 1,76 m), la
+  soudure sol-caisse sous 50 cm (les rétroviseurs restent) ; au-delà de 16 cm, tout. La place est posée sur ce
+  même plan, les pneus reposent dessus ; ombre de contact resserrée sous la caisse.

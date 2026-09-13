@@ -150,6 +150,13 @@ textarea {
   contain-intrinsic-size: auto 1000px;
 }
 
+/* Téléphone : la zone monte par-dessus la Méthode, sa ligne de relevé déborde au-dessus d'elle (Territory). */
+@media (max-width: 899px) {
+  #zone.is-handoff {
+    content-visibility: visible;
+  }
+}
+
 /* Boutons : angles francs, pas de pilule. */
 .btn {
   display: inline-flex;

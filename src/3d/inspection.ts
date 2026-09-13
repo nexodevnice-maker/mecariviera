@@ -217,15 +217,28 @@ vec3 toCar(vec3 p) {
   return vec3(dot(rel, CAR_FORWARD), p.y, dot(rel, CAR_SIDE));
 }
 
+// Sol du relevé : un plan légèrement incliné, ajusté sur les sommets du scan (±7 mm) — hauteur au centre, pentes
+// le long et en travers du véhicule. Contour de la carrosserie vue de dessus (demi-longueur, demi-largeur), mesuré
+// sur le scan.
+const vec3 GROUND = vec3(0.093, 0.019, 0.013);
+const vec2 BODY_HALF = vec2(1.99, 0.88);
+float groundAt(vec3 car) {
+  return GROUND.x + GROUND.y * car.x + GROUND.z * car.z;
+}
+
 void main() {
   vec3 tex = texture2D(map, vUv).rgb;
   float lum = dot(tex, vec3(0.2126, 0.7152, 0.0722));
   vec3 car = toCar(vWorld);
   vec2 q = abs(car.xz) - CAR_HALF + 0.4;
   float outside = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.4;
-  // Téléphone : la voiture détourée — le sol du relevé et ce qui dépasse son emprise sont retirés ; la place de
-  // parking les remplace.
-  if (uCutout > 0.5 && (vWorld.y < 0.045 || outside > 0.1)) discard;
+  // Téléphone : la voiture détourée, la place de parking remplaçant le sol du relevé. Retirés : tout ce qui est à
+  // moins de 3,5 cm au-dessus de ce sol (sous la voiture comme autour) ; hors du contour de la carrosserie, la
+  // soudure sol-caisse (sous 50 cm, les rétroviseurs restent) ; au-delà de 16 cm du contour, tout.
+  float above = vWorld.y - groundAt(car);
+  vec2 edge = abs(car.xz) - BODY_HALF + 0.3;
+  float beyond = length(max(edge, 0.0)) + min(max(edge.x, edge.y), 0.0) - 0.3;
+  if (uCutout > 0.5 && (above < 0.035 || (beyond > 0.02 && above < 0.5) || beyond > 0.16)) discard;
   // Nuit : luminance seule, froide et basse ; un cran plus clair derrière la ligne de scan (relevé).
   float dx = car.x - uSweep;
   float scanned = uSweepMix * (1.0 - smoothstep(-0.3, 0.02, dx));
@@ -264,6 +277,22 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
+// Téléphone : la place de parking posée sur le plan du sol du relevé (un souffle dessous) — les pneus reposent
+// dessus, rien ne flotte.
+const groundVertex = /* glsl */ `
+varying vec3 vWorld;
+const vec2 CAR_CENTER = vec2(0.055, -0.359);
+const vec2 CAR_FORWARD = vec2(0.9026, -0.4305);
+const vec2 CAR_SIDE = vec2(0.4305, 0.9026);
+const vec3 GROUND = vec3(0.093, 0.019, 0.013);
+void main() {
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  vec2 rel = world.xz - CAR_CENTER;
+  world.y = GROUND.x + GROUND.y * dot(rel, CAR_FORWARD) + GROUND.z * dot(rel, CAR_SIDE) - 0.004;
+  vWorld = world.xyz;
+  gl_Position = projectionMatrix * viewMatrix * world;
+}`;
+
 // Téléphone : la place de parking où la voiture est garée — bitume de nuit, lignes blanches de sa place et des
 // voisines, fond de place devant le capot, ombre douce sous la voiture ; la ligne de relevé y passe aussi.
 const groundFragment = /* glsl */ `
@@ -300,10 +329,10 @@ void main() {
   float end = (1.0 - smoothstep(0.05, 0.05 + fwidth(car.x) * 1.5 + 0.003, abs(car.x - 2.9))) * (1.0 - smoothstep(6.4, 6.5, abs(car.y)));
   float paint = max(side, end) * mix(0.7, 1.0, noise(vWorld.xz * 24.0));
   color = mix(color, vec3(0.3, 0.31, 0.34), paint * 0.85);
-  // Ombre de la voiture sur le sol (occlusion douce sous son emprise).
-  vec2 q = abs(car) - CAR_HALF + 0.3;
+  // Ombre de la voiture sur le sol : occlusion sous la carrosserie (contour mesuré), plus dense au contact.
+  vec2 q = abs(car) - vec2(1.99, 0.88) + 0.3;
   float footprint = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.3;
-  color *= mix(0.35, 1.0, smoothstep(-0.25, 0.35, footprint));
+  color *= mix(0.22, 1.0, smoothstep(-0.2, 0.28, footprint));
   // La ligne de relevé passe aussi sur le sol.
   float dx = car.x - uSweep;
   float line = uSweepMix * (1.0 - smoothstep(0.005, 0.005 + 1.5 * fwidth(dx), abs(dx)));
@@ -369,7 +398,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   // Téléphone : la place de parking sous la voiture détourée (dans la scène sur téléphone seulement, resize).
   const ground = new Mesh(
     new PlaneGeometry(26, 26),
-    new ShaderMaterial({ uniforms: { ...uniforms }, vertexShader, fragmentShader: groundFragment }),
+    new ShaderMaterial({ uniforms: { ...uniforms }, vertexShader: groundVertex, fragmentShader: groundFragment }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0.055, 0, -0.359);

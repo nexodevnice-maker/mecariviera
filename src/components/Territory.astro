@@ -764,8 +764,9 @@ const pins = towns.map((t) => {
   }
 
   /* Téléphone, avec le script : la zone d'intervention vient par-dessus la fin de la Méthode (vue encore
-     épinglée), en 3D — la feuille monte couchée et se redresse en arrivant, son bord haut restant en place (les
-     pas guidés s'y posent) ; la scène s'éteint dessous (Method.astro). */
+     épinglée). Son bord est la ligne de relevé de l'inspection — un trait bleu qui monte et balaie la dernière
+     vue, la carte relevée derrière lui, la scène s'éteignant dessous (Method.astro). Aucune transformation :
+     textes et carte restent nets. */
   @media (max-width: 899px) {
     .zone:global(.is-handoff) {
       position: relative;
@@ -775,16 +776,25 @@ const pins = towns.map((t) => {
       background:
         radial-gradient(52% 58% at 78% 60%, rgb(36 85 255 / 0.07), transparent 72%),
         var(--ink);
-      border-top: 1px solid var(--line);
-      box-shadow: 0 -2.5rem 5rem rgb(0 0 0 / 0.6);
-      transform-origin: 50% 0;
-      transform: perspective(1200px) rotateX(calc((1 - var(--enter, 1)) * -34deg)) scale(calc(0.9 + 0.1 * var(--enter, 1)));
     }
-  }
 
-  @media (max-width: 899px) and (prefers-reduced-motion: reduce) {
-    .zone:global(.is-handoff) {
-      transform: none;
+    /* La ligne : fine, sa lueur bleue portée vers la scène qu'elle balaie ; elle s'éteint à l'arrivée. */
+    .zone:global(.is-handoff)::before {
+      content: '';
+      position: absolute;
+      inset: 0 0 auto;
+      height: 1px;
+      background: var(--blue-soft);
+      box-shadow:
+        0 0 12px 1px rgb(134 166 255 / 0.7),
+        0 -18px 48px 6px rgb(36 85 255 / 0.28);
+      opacity: calc(1 - 0.85 * var(--enter, 1));
+      pointer-events: none;
+    }
+
+    /* Le contenu se révèle derrière la ligne (opacité seule). */
+    .zone:global(.is-handoff) .zone__grid {
+      opacity: clamp(0, calc(var(--enter, 1) * 1.8 - 0.35), 1);
     }
   }
 
