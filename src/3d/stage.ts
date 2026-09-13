@@ -58,10 +58,11 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { createFollow } from '../motion/follow';
-import { guided } from '../motion/guide';
+import { guided, zoomHold } from '../motion/guide';
 import type { StageProgress } from '../motion/stage-progress';
 import { BANDS, createBay, FIT_TALL, FIT_WIDE, type BayFit } from './bay';
 import { mergeByMaterial, toolCase } from './props';
+import { createQuality } from './quality';
 import { guidedPace, paced, RIGS, type Framing, type Shot, type StopKey } from './rigs';
 import { STUDIO_ENV_SIGMA, STUDIO_PANELS } from './studio';
 import { vehicleById, type Exhaust, type Lamps, type Plate, type VehicleId } from './vehicles';
@@ -369,7 +370,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     const head = (reduced.matches ? 1 : ignition(t, XENON)) * on;
     const rear = (reduced.matches ? 1 : MathUtils.smoothstep(t, 0.3, 0.42)) * on;
     const strike = reduced.matches ? 0 : 1 - MathUtils.smoothstep(t, 0.4, 1.3);
-    lamps.set(head, headColor.setRGB(0.84 - 0.22 * strike, 0.92 - 0.2 * strike, 1.06 + 0.3 * strike), rear);
+    lamps.set(head, headColor.setRGB(0.5 - 0.12 * strike, 0.7 - 0.1 * strike, 1.35 + 0.25 * strike), rear);
     roadUniforms.uHead.value = head;
     roadUniforms.uTail.value = rear;
     // Les outils de la mallette : acier sombre dans la nuit, chromes brillants sous la lanterne et les phares.
@@ -513,13 +514,15 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     beacon.style.opacity = strength.toFixed(3);
   };
 
-  // — Dimensions et qualité : la définition baisse d'un cran si les images ralentissent.
-  // Téléphone : jusqu'à 2 (définition haute sur écran dense) ; ordinateur : 1,75.
-  const dprSteps = (narrow.matches ? [2, 1.5, 1.25, 1, 0.75] : [1.75, 1.25, 1, 0.75]).map((v) =>
-    Math.min(window.devicePixelRatio, v),
-  );
+  // — Dimensions et qualité. Ordinateur : 1,75, un cran de moins si les images ralentissent. Téléphone : jusqu'à 2
+  // (définition haute sur écran dense), adaptée au rythme réel de l'écran, jamais sous 1,25 (quality.ts).
+  const dprSteps = [1.75, 1.25, 1, 0.75].map((v) => Math.min(window.devicePixelRatio, v));
   let dprLevel = 0;
   let slowFrames = 0;
+  const phoneQuality = createQuality(
+    [2, 1.75, 1.5, 1.25].map((v) => Math.min(window.devicePixelRatio, v)),
+    () => resize(),
+  );
   let dirty = true;
   let wasNarrow = narrow.matches;
 
@@ -535,7 +538,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
         scene.environmentIntensity = 1;
       }
     }
-    renderer.setPixelRatio(dprSteps[dprLevel]);
+    renderer.setPixelRatio(narrow.matches ? phoneQuality.ratio : dprSteps[dprLevel]);
     renderer.setSize(vw, vh, false);
     lights.visible = !backdrop && !narrow.matches;
     // Le sol selon le format. Ordinateur : la route s'arrête au début du trottoir, après la pierre de bordure,
@@ -669,7 +672,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     // Téléphone : la lanterne suit le haut de la page — allumage (papillotement, éclat) dès qu'on le quitte,
     // extinction en fondu quand on y revient.
     if (narrow.matches && !lampFrozen) {
-      const wanted = window.scrollY > 2;
+      // (Zoom au pincement : la position d'avant le zoom, tenue — guide.ts.)
+      const wanted = (zoomHold() ?? window.scrollY) > 2;
       if (wanted !== lampOn) {
         lampOn = wanted;
         if (lampOn && lampFade === 0) {
@@ -691,16 +695,22 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     }
     // Arrêt Échappement (téléphone) : les flammes, une fois, dès que la caméra s'y pose (le scroll y est arrêté).
     if (narrow.matches && !flameDone) {
-      if (flameStart < 0 && Math.abs(target - rearStop) < 0.2 && Math.abs(current - rearStop) < 0.12) flameStart = now;
+      if (flameStart < 0 && Math.abs(target - rearStop) < 0.2 && Math.abs(current - rearStop) < 0.12) {
+        flameStart = now;
+        // Pendant les flammes, la Méthode diffère sa mise en place (Method.astro) : rien ne les fait saccader.
+        document.documentElement.dataset.flames = '';
+      }
       if (flameStart >= 0) {
         const t = (now - flameStart) / 1000;
         setFlames(Math.min(t, FLAME_END));
         flameDone = t >= FLAME_END;
+        if (flameDone) delete document.documentElement.dataset.flames;
         changed = true;
       }
     }
     if (!changed) {
       slowFrames = 0;
+      if (narrow.matches) phoneQuality.tick(dt, false, now);
       return;
     }
 
@@ -716,10 +726,15 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       dispatchEvent(new CustomEvent('meca:scene-ready'));
     }
 
-    // Téléphone : la fluidité d'abord — un cran de définition en moins dès que les images passent sous ~45 i/s.
-    if (dt > (narrow.matches ? 1 / 45 : 1 / 24)) slowFrames++;
+    // Téléphone : définition adaptée au rythme réel de l'écran (quality.ts). Ordinateur : un cran de moins dès que les
+    // images passent sous ~24 i/s.
+    if (narrow.matches) {
+      phoneQuality.tick(dt, true, now);
+      return;
+    }
+    if (dt > 1 / 24) slowFrames++;
     else slowFrames = Math.max(0, slowFrames - 1);
-    if (slowFrames > (narrow.matches ? 12 : 8) && dprLevel < dprSteps.length - 1) {
+    if (slowFrames > 8 && dprLevel < dprSteps.length - 1) {
       dprLevel++;
       slowFrames = 0;
       resize();
@@ -823,7 +838,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
             textures: renderer.info.memory.textures,
             programs: renderer.info.programs?.length,
             baked: Boolean(environment),
-            dprLevel,
+            dprLevel: narrow.matches ? phoneQuality.level : dprLevel,
           };
         },
       },
@@ -1070,11 +1085,19 @@ vec3 phone(vec2 p) {
   light += uLampTint * 0.6 * lamp * exp(-dot(o, o) / 18.0);
   vec2 q = (p - uFlameAt) * vec2(0.9, 1.6);
   light += vec3(1.0, 0.42, 0.12) * uFlame * exp(-dot(q, q) / 0.35);
-  light += vec3(0.8, 0.9, 1.1) * uHead * 2.4 * (lowBeam(p, uHeadAt) + lowBeam(p, vec2(-uHeadAt.x, uHeadAt.y)));
-  // Feux arrière : un reflet rouge sur la chaussée, juste derrière le véhicule.
-  vec2 t1 = (p - uTailAt) * vec2(1.3, 0.9);
-  vec2 t2 = (p - vec2(-uTailAt.x, uTailAt.y)) * vec2(1.3, 0.9);
-  light += vec3(1.0, 0.07, 0.04) * uTail * 0.45 * (exp(-dot(t1, t1) / 0.45) + exp(-dot(t2, t2) / 0.45)) * step(p.y, uTailAt.y);
+  // Phares xénon : le faisceau de croisement, d'un blanc bleuté, et leur lueur au pied du bouclier.
+  vec2 h1 = (p - vec2(uHeadAt.x, uHeadAt.y + 0.4)) * vec2(1.3, 1.0);
+  vec2 h2 = (p - vec2(-uHeadAt.x, uHeadAt.y + 0.4)) * vec2(1.3, 1.0);
+  float front = smoothstep(uHeadAt.y - 0.1, uHeadAt.y + 0.2, p.y);
+  light += vec3(0.5, 0.72, 1.35) * uHead * (2.8 * (lowBeam(p, uHeadAt) + lowBeam(p, vec2(-uHeadAt.x, uHeadAt.y)))
+    + 0.55 * front * (exp(-dot(h1, h1) / 0.5) + exp(-dot(h2, h2) / 0.5)));
+  // Feux arrière, comme au freinage : leur lueur rouge sur la chaussée derrière le véhicule — vive au pied du bouclier,
+  // étirée vers l'arrière, et un halo plus large autour.
+  vec2 t1 = (p - vec2(uTailAt.x, uTailAt.y - 0.55)) * vec2(1.1, 0.62);
+  vec2 t2 = (p - vec2(-uTailAt.x, uTailAt.y - 0.55)) * vec2(1.1, 0.62);
+  vec2 tw = (p - vec2(0.0, uTailAt.y - 1.1)) * vec2(0.65, 0.5);
+  float behind = smoothstep(uTailAt.y + 0.1, uTailAt.y - 0.3, p.y);
+  light += vec3(1.0, 0.045, 0.025) * uTail * behind * (2.6 * (exp(-dot(t1, t1) / 0.5) + exp(-dot(t2, t2) / 0.5)) + 0.45 * exp(-dot(tw, tw)));
   vec3 color = albedo * light * (1.0 + 2.5 * edge);
   // La peinture routière (billes de verre) renvoie la moindre lumière : les lignes restent blanches dans la nuit.
   color += paint * vec3(0.05, 0.052, 0.056);
@@ -1495,7 +1518,7 @@ varying vec3 vNormal;
 varying float vAlong;
 void main() {
   float facing = abs(dot(normalize(vNormal), normalize(cameraPosition - vWorld)));
-  float a = 0.012 * uHead * facing * facing * (1.0 - vAlong) * (1.0 - vAlong) * smoothstep(0.0, 0.05, vAlong);
+  float a = 0.016 * uHead * facing * facing * (1.0 - vAlong) * (1.0 - vAlong) * smoothstep(0.0, 0.05, vAlong);
   gl_FragColor = vec4(uHeadColor * a, 1.0);
   #include <colorspace_fragment>
 }`;
@@ -1533,7 +1556,7 @@ function streakTexture() {
  */
 function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
   const uHead = { value: 0 };
-  const uHeadColor = { value: new Color(0.84, 0.92, 1.06) };
+  const uHeadColor = { value: new Color(0.5, 0.7, 1.35) };
   const uTail = { value: 0 };
   const v = (n: number) => n.toFixed(3);
   const [cx, cy, cz] = lamps.center;
@@ -1561,14 +1584,15 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
             float inLamp = 1.0 - smoothstep(-0.01, 0.02, max(max(lampBox.x, lampBox.y), lampBox.z));
             vec3 tailBox = abs(vec3(abs(vLampWorld.x), vLampWorld.yz) - vec3(${v(tx)}, ${v(ty)}, ${v(tz)})) - vec3(${v(sx)}, ${v(sy)}, ${v(sz)});
             float inTail = 1.0 - smoothstep(-0.01, 0.02, max(max(tailBox.x, tailBox.y), tailBox.z));
-            // Phares : seules les parties claires des optiques (lentilles, réflecteurs, signature lumineuse) s'allument
-            // franchement, le boîtier reste sombre. Feux arrière : un rouge vif, dosé sous la compression des hautes
-            // lumières (qui le ferait virer au rose). Vitres teintées : émission compensée de leur opacité.
+            // Phares : les parties claires des optiques (lentilles, réflecteurs, signature lumineuse) brûlent au blanc
+            // bleuté du xénon, le boîtier garde un voile bleu. Feux arrière : le rouge d'un feu stop, franc sur tout le
+            // verre, dosé au bord de la compression des hautes lumières (au-delà, il virerait au rose). Vitres
+            // teintées : émission compensée de leur opacité.
             float lum = dot(diffuseColor.rgb, vec3(0.3333));
             float glass = 1.0 / max(diffuseColor.a, 0.25);
             float optic = smoothstep(0.3, 0.85, lum);
-            totalEmissiveRadiance += uHeadColor * uHead * inLamp * (0.06 + 1.2 * optic * optic) * glass;
-            totalEmissiveRadiance += vec3(1.0, 0.02, 0.01) * uTail * inTail * (0.4 + 0.8 * smoothstep(0.1, 0.6, lum)) * glass;`,
+            totalEmissiveRadiance += uHeadColor * uHead * inLamp * (0.1 + 1.35 * optic * optic) * glass;
+            totalEmissiveRadiance += vec3(1.0, 0.015, 0.008) * uTail * inTail * (0.75 + 0.6 * smoothstep(0.1, 0.6, lum)) * glass;`,
           )
           // Feux arrière allumés : leurs reflets (ciel, lanterne) teintés de rouge, comme sous un verre rouge éclairé.
           .replace(
@@ -1579,8 +1603,19 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
     });
   const group = new Group();
   group.visible = false;
+  // Un seul dégradé pour tous les éclats et halos (une texture).
+  const soft = glowTexture();
   const glow = new SpriteMaterial({
-    map: glowTexture(),
+    map: soft,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0,
+  });
+  // Xénon : un voile bleu, plus large, autour de chaque optique.
+  const aura = new SpriteMaterial({
+    map: soft,
+    color: new Color(0.18, 0.38, 1),
     blending: AdditiveBlending,
     depthWrite: false,
     transparent: true,
@@ -1607,9 +1642,13 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
   for (const x of [-cx, cx]) {
     const flare = new Sprite(glow);
     flare.position.set(x, cy, lamps.face + 0.03);
+    const veil = new Sprite(aura);
+    veil.position.copy(flare.position);
+    veil.scale.setScalar(1.8);
+    group.add(veil);
     const trail = new Sprite(streak);
     trail.position.copy(flare.position);
-    trail.scale.set(2.4, 0.1, 1);
+    trail.scale.set(2.8, 0.1, 1);
     // Le faisceau : sommet à l'optique, ouvert vers l'avant, un rien vers le sol.
     const shaft = new Mesh(cone, air);
     shaft.rotation.x = -Math.PI / 2 + 0.05;
@@ -1617,10 +1656,18 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
     flares.push(flare);
     group.add(flare, trail, shaft);
   }
-  // Feux arrière : un halo rouge sur chaque optique.
+  // Feux arrière, comme au freinage : un halo rouge sur chaque optique, et une lueur plus large autour.
   const red = new SpriteMaterial({
-    map: glowTexture(),
+    map: soft,
     color: 0xff140a,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0,
+  });
+  const bloom = new SpriteMaterial({
+    map: soft,
+    color: 0xff0804,
     blending: AdditiveBlending,
     depthWrite: false,
     transparent: true,
@@ -1629,20 +1676,25 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
   for (const x of [-tx, tx]) {
     const halo = new Sprite(red);
     halo.position.set(x, ty, tail.face - 0.03);
-    halo.scale.setScalar(0.5);
-    group.add(halo);
+    halo.scale.setScalar(0.62);
+    const wide = new Sprite(bloom);
+    wide.position.copy(halo.position);
+    wide.scale.setScalar(1.6);
+    group.add(wide, halo);
   }
   /** Phares (0 : éteints ; l'amorçage dépasse 1) et leur teinte ; feux arrière (0 à 1). */
   const set = (level: number, color: Color, rear: number) => {
     uHead.value = level * 3;
-    uTail.value = rear * 1.2;
+    uTail.value = rear * 1.25;
     uHeadColor.value.copy(color);
     glow.color.copy(color);
     streak.color.copy(color).multiplyScalar(0.8);
     glow.opacity = Math.min(level, 1);
-    streak.opacity = Math.min(level, 1) * 0.35;
-    red.opacity = rear * 0.55;
-    for (const flare of flares) flare.scale.setScalar(0.55 + 0.25 * Math.min(level, 1.7));
+    aura.opacity = Math.min(level, 1.4) * 0.6;
+    streak.opacity = Math.min(level, 1) * 0.5;
+    red.opacity = rear * 0.9;
+    bloom.opacity = rear * 0.32;
+    for (const flare of flares) flare.scale.setScalar(0.75 + 0.3 * Math.min(level, 1.7));
     group.visible = level > 0.002 || rear > 0.002;
   };
   return { group, set };

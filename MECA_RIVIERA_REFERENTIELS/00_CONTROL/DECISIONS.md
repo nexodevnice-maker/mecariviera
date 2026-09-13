@@ -323,3 +323,50 @@ Visuel sur téléphone seulement ; le premier plan tenu vaut pour tous les forma
   froid, normales du scan lissées, reflet discret, liseré — et une plaque MECA RIVIERA sur son support avant (la bande
   saillante de la plaque d'origine, relevée sur le scan). Le scan en haute définition (textures 2048) demanderait plus
   de 100 Mo de mémoire graphique : écarté. Ordinateur : programme propre, inchangé.
+
+### 2026-09-14 — Premier plan à coup sûr, zoom au doigt, carte de Cannes à Beaulieu, drapeau du 06, deux numéros, feux, mentions, fluidité
+Visuel sur téléphone seulement ; le premier plan vaut pour tous les formats.
+- **Premier plan à coup sûr** : trois failles corrigées dans la tenue du haut de page. Le retour en haut était un glissé
+  (la page défile en `scroll-behavior: smooth`) qu'un doigt pouvait interrompre à mi-page ; les points d'accroche des
+  pas guidés restaient actifs pendant la tenue ; la tenue s'arrêtait 12 s après l'arrivée, même quand le chargement
+  complet — après lequel Safari rétablit la position — venait plus tard. Désormais, pendant la tenue (classe is-held),
+  retour instantané et sans accroche, à chaque image et à chaque défilement, jusqu'à 1,5 s après l'entrée et le
+  chargement complet (garde-fou : 25 s) ; la main rendue au premier geste, au clavier ou au focus (lecteur d'écran) ;
+  en partant, retour en haut instantané. Vérifié : cinq rechargements successifs depuis de plus en plus bas, dix
+  restaurations simulées de 0,15 à 3,6 s après l'arrivée, téléphone bridé (4G, processeur ÷4), ordinateur.
+- **Zoom au pincement** : dès que deux doigts se posent, et tant que la page est agrandie, les points d'accroche sont
+  levés et la progression des scènes reste celle d'avant le zoom — la voiture ne bouge pas, doigts posés ou levés, même
+  en se déplaçant dans l'image agrandie. Revenue à l'échelle 1, la page reprend exactement sa position et les pas
+  reprennent ; le défilement guidé est inchangé (src/motion/guide.ts, stage-progress.ts).
+- **Zone d'intervention** : carte étendue, de Cannes à Beaulieu-sur-Mer — rivage relevé point par point (pointe de la
+  Croisette, Golfe-Juan, cap d'Antibes, baie des Anges, port de Nice, mont Boron, rade de Villefranche, cap Ferrat),
+  îles de Lérins, le Var ; lignes de sonde à égale distance du rivage, îles comprises, calculées au build
+  (src/content/coast.ts) ; lueur des villes la nuit ; repères (Cannes, Beaulieu, caps, îles). Mêmes quatre communes,
+  même tournée, qui entre par la basse corniche depuis Èze. Dans le cartouche, le vrai drapeau traditionnel des
+  Alpes-Maritimes, au choix du porteur (aigle rouge couronnée sur trois monts, mer ondée, fond blanc) : fichier
+  Flag_of_the_County_of_Nice.svg de Wikimedia Commons, domaine public, débarrassé de ses métadonnées d'éditeur
+  (public/media/flag-06.svg) — aucune version officielle à fond bleu avec l'aigle n'existe ; le drapeau institutionnel
+  du Département (logo déposé) a été écarté. L'ordinateur garde sa carte.
+- **Deux numéros** : « Appeler », dans la barre du bas, ouvre le choix entre le 06 35 27 73 69 et le 07 67 97 53 67 (la
+  mention seule sur le bouton, à la demande du porteur) ; sous « Vous êtes ailleurs dans le 06 ? », deux boutons
+  d'appel.
+- **Phares xénon** plus bleutés et plus prononcés : teinte bleue, voile bleu autour de chaque optique, traînée plus
+  longue, faisceau plus dense, lueur bleutée au pied du bouclier.
+- **Feux arrière** comme au freinage : rouge franc sur tout le verre (toujours sous la compression des hautes lumières),
+  halo et lueur plus larges, et leur lueur rouge sur la chaussée derrière le véhicule.
+- **Méthode** : la lueur bleue autour de la pièce n'apparaît qu'une fois le relevé passé (fin du balayage du capot).
+- **Entrée** : en bas à gauche, « © MECA RIVIERA · Tous droits réservés », « Mentions légales · CGU · CLU »,
+  « Conception nexoDeveloppement » (texte ; les pages elles-mêmes restent à rédiger — publication.legalNotice).
+- **Fluidité, deux passes mesurées** : parcours guidé complet au doigt sur téléphone, dans deux conditions de batterie
+  faible simulées — écran bridé à 30 images/s (mode économie d'énergie) et processeur ralenti ×4 —, avant / après.
+  - Passe 1 — la cause de la « qualité réduite » : bridé à 30 images/s, l'écran était pris pour une surcharge et la
+    définition des scènes 3D descendait jusqu'à 0,75 (flou) ; chaque changement de définition figeait la page, jusqu'à
+    1,6 s. La définition suit désormais le vrai rythme de l'écran (src/3d/quality.ts) : un cran de moins seulement si
+    les images ratent durablement leur rendez-vous, jamais sous 1,25, et elle remonte quand l'aisance revient. Plus
+    aucune lecture de mise en page par image dans la Méthode ; textures envoyées au processeur graphique une par image ;
+    la carte animée sur son propre calque ; la barre d'appel n'écrit plus dans la page à chaque défilement.
+  - Passe 2 — la mise en place de la Méthode (chargement, compilation) tombait pendant les flammes de l'Échappement :
+    elle attend un temps calme (flammes finies, pas de geste en cours ; au plus 3 s) et se fait par petites étapes, une
+    image entre chacune.
+  - Résultat : écran bridé, définition 2 sur les deux scènes (au lieu de 0,75 et 1) ; processeur ÷4, plus longue tâche
+    bloquante ramenée de 1,1–7,5 s à 0,16 s, blocages cumulés de 3,0–14,6 s à 1,8 s.

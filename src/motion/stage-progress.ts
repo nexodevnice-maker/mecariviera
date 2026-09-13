@@ -1,3 +1,5 @@
+import { zoomHold } from './guide';
+
 /**
  * Progression du scroll à travers les arrêts de la scène.
  * 0 = premier arrêt au point focal, n - 1 = dernier ; les valeurs intermédiaires
@@ -50,7 +52,8 @@ export function createStageProgress(
 
   const read = () => {
     if (marks.length < 2) return 0;
-    const center = window.scrollY + half;
+    // Zoom au pincement (téléphone) : la position d'avant le zoom, tenue (guide.ts).
+    const center = (zoomHold() ?? window.scrollY) + half;
     if (center <= marks[0]) return 0;
     for (let i = 0; i < marks.length - 1; i++) {
       if (center < marks[i + 1]) return i + (center - marks[i]) / (marks[i + 1] - marks[i]);

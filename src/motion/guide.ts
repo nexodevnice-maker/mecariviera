@@ -19,10 +19,42 @@ let navigating = false;
 let started = false;
 let settleTimer = 0;
 
+/**
+ * Zoom au pincement (téléphone) : la page reste où elle était. Dès que deux doigts se posent, et tant que la page est
+ * agrandie, les points d'accroche sont levés et la progression des scènes reste celle d'avant le zoom
+ * (stage-progress.ts) : la voiture reste en place, sans pas ni changement de plan, doigts posés ou levés. Revenue à
+ * l'échelle 1, doigts levés, la page reprend exactement sa position d'avant, et les pas reviennent.
+ */
+let zoomAt: number | null = null;
+let fingers = 0;
+/** Position (scrollY) tenue pendant un zoom au pincement ; null hors zoom. */
+export const zoomHold = () => zoomAt;
+
 const docTop = (el: Element) => el.getBoundingClientRect().top + window.scrollY;
 
 const update = () => {
-  html.classList.toggle('is-guided', guided.matches && !navigating && window.scrollY < end - 2);
+  html.classList.toggle('is-guided', guided.matches && !navigating && zoomAt === null && window.scrollY < end - 2);
+};
+
+const zoomCheck = () => {
+  const zoomed = guided.matches && (fingers > 1 || (window.visualViewport?.scale ?? 1) > 1.01);
+  if (zoomed && zoomAt === null) {
+    zoomAt = window.scrollY;
+    update();
+  } else if (!zoomed && zoomAt !== null && fingers === 0) {
+    const y = zoomAt;
+    zoomAt = null;
+    // Retour instantané (sans glissé) à la position d'avant le zoom, avant que l'accroche ne revienne.
+    html.style.scrollBehavior = 'auto';
+    window.scrollTo(0, y);
+    html.style.scrollBehavior = '';
+    update();
+  }
+};
+
+const onTouches = (event: TouchEvent) => {
+  fingers = event.touches.length;
+  zoomCheck();
 };
 
 const measureEnd = () => {
@@ -84,6 +116,10 @@ function start() {
     },
     { passive: true },
   );
+  // Zoom au pincement : doigts posés ou levés, et échelle de la page (visualViewport).
+  for (const type of ['touchstart', 'touchend', 'touchcancel'] as const)
+    addEventListener(type, onTouches, { passive: true, capture: true });
+  window.visualViewport?.addEventListener('resize', zoomCheck);
   addEventListener('resize', measureEnd);
   guided.addEventListener('change', measureEnd);
   new ResizeObserver(measureEnd).observe(document.body);

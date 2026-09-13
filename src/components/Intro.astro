@@ -7,8 +7,9 @@
  * lecture —, au plus tard après 5 s (l'affiche, identique à la première image de la 3D, prend alors le relais et la
  * 3D la remplace à son arrivée), et aussitôt à la moindre interaction. Téléphone : 2,5 s pleines, une fine barre
  * blanche qui se remplit, la page immobile pendant ce temps. L'arrivée des phares attend qu'elle se lève (événement
- * meca:enter). Sans script : aucune entrée.
+ * meca:enter). Sans script : aucune entrée. Téléphone : en bas à gauche, les mentions de l'éditeur, comme au générique.
  */
+const year = new Date().getFullYear();
 ---
 
 <script is:inline>
@@ -17,20 +18,35 @@
     const root = document.documentElement;
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
-    // Le haut est tenu à chaque image pendant l'entrée, puis 1,5 s après elle et après le chargement complet : Safari
-    // et les navigateurs intégrés aux applications rétablissent parfois la position tard. Le premier geste du
-    // visiteur, une fois l'entrée levée, lui rend la main (au plus tard 12 s après l'arrivée) ; en partant, la page se
-    // remet en haut : aucun navigateur n'a d'autre position à restaurer.
+    // Le haut est tenu — à chaque image et à chaque défilement — pendant l'entrée, puis jusqu'à 1,5 s après elle et
+    // après le chargement complet, si lent soit-il : Safari et les navigateurs intégrés aux applications rétablissent
+    // parfois la position tard. Pendant ce temps (is-held), le retour en haut est instantané (jamais un glissé qu'un
+    // doigt interromprait à mi-page) et le défilement n'a aucun point d'accroche (pas guidés) qui le retiendrait plus
+    // bas. Le premier geste du visiteur, une fois l'entrée levée, lui rend la main. En partant, la page se remet en
+    // haut, sans glissé : un navigateur qui garderait malgré tout une position n'a que celle-là.
     let free = false;
     let entered = false;
-    let until = 12000;
+    let until = Infinity;
+    const top = () => {
+      if (!free && (scrollX || scrollY)) scrollTo(0, 0);
+    };
+    const letGo = () => {
+      if (free) return;
+      free = true;
+      root.classList.remove('is-held');
+      removeEventListener('scroll', top);
+    };
     const hold = (now) => {
-      if (free || now > until) return;
-      if (scrollX || scrollY) scrollTo(0, 0);
+      if (free) return;
+      // Garde-fou : la main rendue au plus tard 25 s après l'arrivée, même sans chargement complet.
+      if (now > until || now > 25000) return letGo();
+      top();
       requestAnimationFrame(hold);
     };
+    root.classList.add('is-held');
     scrollTo(0, 0);
     requestAnimationFrame(hold);
+    addEventListener('scroll', top, { passive: true });
     const arm = () => {
       if (entered && document.readyState === 'complete') until = performance.now() + 1500;
     };
@@ -38,19 +54,23 @@
       'meca:enter',
       () => {
         entered = true;
-        scrollTo(0, 0);
+        top();
         arm();
       },
       { once: true },
     );
     addEventListener('load', arm, { once: true });
     const release = () => {
-      if (entered && !root.classList.contains('intro-lock')) free = true;
+      if (entered && !root.classList.contains('intro-lock')) letGo();
     };
-    for (const type of ['wheel', 'touchstart', 'keydown', 'pointerdown']) addEventListener(type, release, { capture: true, passive: true });
+    // Geste, clavier, ou focus déplacé (lecteur d'écran) : la main au visiteur.
+    for (const type of ['wheel', 'touchstart', 'keydown', 'pointerdown', 'focusin']) addEventListener(type, release, { capture: true, passive: true });
     // Contrôle QA (captures) : la main tout de suite.
-    addEventListener('meca:intro-finish', () => (free = true), { once: true });
-    addEventListener('pagehide', () => scrollTo(0, 0));
+    addEventListener('meca:intro-finish', letGo, { once: true });
+    addEventListener('pagehide', () => {
+      root.classList.add('is-held');
+      scrollTo(0, 0);
+    });
     // Page restaurée telle quelle (retour par l'historique) : rechargée, l'entrée avec.
     addEventListener('pageshow', (event) => event.persisted && location.reload());
     root.classList.add('has-intro');
@@ -64,6 +84,12 @@
     <span class="intro__present">PRESENT</span>
     <!-- Téléphone : une fine barre blanche se remplit pendant les 2,5 s de l'entrée. -->
     <span class="intro__bar"><span></span></span>
+  </p>
+  <!-- Téléphone : les mentions, en bas à gauche. -->
+  <p class="intro__legal">
+    <span>© {year} MECA RIVIERA · Tous droits réservés</span>
+    <span>Mentions légales · CGU · CLU</span>
+    <span>Conception nexoDeveloppement</span>
   </p>
 </div>
 <script is:inline>
@@ -117,6 +143,12 @@
 </script>
 
 <style>
+  /* Haut de page tenu à l'arrivée (script en tête) : retour instantané, sans point d'accroche. */
+  :global(html.is-held) {
+    scroll-behavior: auto !important;
+    scroll-snap-type: none !important;
+  }
+
   /* Au-dessus de l'en-tête et de la barre d'appel, sous le lien d'évitement (et sous le grain, en desktop). */
   .intro {
     position: fixed;
@@ -183,7 +215,8 @@
   }
 
   /* Téléphone : la barre de chargement (2,5 s, linéaire) ; la page ne défile pas pendant l'entrée. */
-  .intro__bar {
+  .intro__bar,
+  .intro__legal {
     display: none;
   }
 
@@ -213,6 +246,29 @@
       transform: scaleX(0);
       transform-origin: 0 50%;
       animation: intro-load 2.5s linear forwards;
+    }
+
+    /* Les mentions : petites capitales discrètes, en bas à gauche, qui arrivent avec le titre. */
+    .intro__legal {
+      position: absolute;
+      inset: auto auto calc(1.25rem + env(safe-area-inset-bottom)) var(--gutter);
+      /* Hors du centrage de l'entrée (grille centrée) : calé en bas à gauche. */
+      place-self: end start;
+      display: grid;
+      gap: 0.3rem;
+      font-stretch: var(--semi);
+      font-weight: 500;
+      font-size: 0.625rem;
+      line-height: 1.3;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      opacity: 0;
+      transition: opacity 1.2s var(--ease-out) 0.6s;
+    }
+
+    .intro.is-set .intro__legal {
+      opacity: 1;
     }
   }
 

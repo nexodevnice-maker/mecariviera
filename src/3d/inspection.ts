@@ -11,6 +11,7 @@ import {
   Vector3,
   WebGLRenderer,
   type MeshBasicMaterial,
+  type Texture,
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
@@ -18,6 +19,7 @@ import { createFollow } from '../motion/follow';
 import { guided } from '../motion/guide';
 import type { StageProgress } from '../motion/stage-progress';
 import { INSPECTION_PACES } from './inspection-paces';
+import { createQuality } from './quality';
 import { guidedPace, paced, type Pace, type Vec3 } from './rigs';
 import { plateTexture } from './stage';
 
@@ -422,14 +424,22 @@ interface InspectionOptions {
 }
 
 const v3 = (a: Vec3) => new Vector3(...a);
+/** Laisse passer une image entre deux étapes de la mise en place : aucune tâche longue d'un seul tenant. */
+const breathe = () => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 
 export async function createInspection({ root, canvas, stops, progress, narrow }: InspectionOptions) {
+  // Jalons (mesures de fluidité) : inspection:start, :context, :model, :scene, :compiled, :textures, :first-frame.
+  performance.mark('inspection:start');
   const viewport = canvas.parentElement as HTMLElement;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  // Dimensions de la vue, relevées au redimensionnement (resize) : aucune lecture de mise en page par image.
+  let vw = viewport.clientWidth;
+  let vh = viewport.clientHeight;
 
   const renderer = new WebGLRenderer({ canvas, antialias: window.devicePixelRatio < 2, powerPreference: 'high-performance' });
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.debug.checkShaderErrors = import.meta.env.DEV;
+  performance.mark('inspection:context');
 
   const scene = new Scene();
   scene.background = new Color(INK);
@@ -454,12 +464,17 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   const gltf = await new GLTFLoader()
     .setMeshoptDecoder(MeshoptDecoder)
     .loadAsync(narrow.matches ? '/3d/a1-scan-m.glb' : '/3d/a1-scan.glb');
+  performance.mark('inspection:model');
+  await breathe();
   const anisotropy = Math.min(narrow.matches ? 16 : 8, renderer.capabilities.getMaxAnisotropy());
   // Un programme par format (PHONE, resize) : le téléphone a ses couleurs de nuit, l'ordinateur garde le sien.
   const scanMaterials: ShaderMaterial[] = [];
+  const scanMeshes: Mesh[] = [];
   gltf.scene.traverse((node) => {
-    const mesh = node as Mesh;
-    if (!mesh.isMesh) return;
+    if ((node as Mesh).isMesh) scanMeshes.push(node as Mesh);
+  });
+  // Une pièce du scan par image.
+  for (const mesh of scanMeshes) {
     const source = mesh.material as MeshBasicMaterial;
     if (source.map) source.map.anisotropy = anisotropy;
     // Le scan n'a pas de normales : lissées ici, pour un modelé continu (téléphone).
@@ -473,8 +488,10 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     scanMaterials.push(material);
     mesh.material = material;
     source.dispose();
-  });
+    await breathe();
+  }
   scene.add(gltf.scene);
+  performance.mark('inspection:scene');
   // Téléphone : la place de parking sous la voiture détourée (dans la scène sur téléphone seulement, resize).
   const ground = new Mesh(
     new PlaneGeometry(26, 26),
@@ -504,6 +521,8 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   let positions: CatmullRomCurve3;
   let targets: CatmullRomCurve3;
   let shift = 0;
+  /** Téléphone : la pièce nommée au bleu de la marque (resize) ; 0 sur ordinateur. */
+  let accent = 0;
 
   const buildPath = () => {
     framings = shots.map((s) => (narrow.matches ? { ...s, ...s.mobile } : s));
@@ -513,8 +532,8 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   buildPath();
 
   const applyOffset = () => {
-    const w = viewport.clientWidth;
-    const h = viewport.clientHeight;
+    const w = vw;
+    const h = vh;
     if (narrow.matches) camera.setViewOffset(w, h, 0, h * shift, w, h);
     else camera.setViewOffset(w, h, -w * (shift + Math.max(0, 1 - w / 1440) * 0.08), 0, w, h);
     camera.updateProjectionMatrix();
@@ -549,6 +568,8 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     // La nuit ne revient qu'en fin de balayage : jusque-là, seul le relevé existe.
     uniforms.uReveal.value = lerp(a.reveal, b.reveal, t ** 3);
     uniforms.uIsolate.value = lerp(a.isolate, b.isolate, t);
+    // Téléphone : la lueur bleue autour de la pièce n'apparaît qu'une fois le relevé passé (fin du balayage du capot).
+    uniforms.uAccent.value = accent * (i > 0 ? 1 : MathUtils.smoothstep(sweep, 0.9, 1));
     shift = lerp(framings[i].shift, framings[Math.min(i + 1, last)].shift, t);
     applyOffset();
   };
@@ -570,8 +591,8 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
       return;
     }
     anchor.set(...point).project(camera);
-    const ax = ((anchor.x + 1) / 2) * viewport.clientWidth;
-    const ay = ((1 - anchor.y) / 2) * viewport.clientHeight;
+    const ax = ((anchor.x + 1) / 2) * vw;
+    const ay = ((1 - anchor.y) / 2) * vh;
     const r = origin.getBoundingClientRect();
     calloutLine.setAttribute('d', `M${r.right},${r.bottom} H${r.right + 56} L${ax},${ay}`);
     for (const c of calloutRings) {
@@ -593,17 +614,16 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
       return;
     }
     anchor.set(...point).project(camera);
-    const x = ((anchor.x + 1) / 2) * viewport.clientWidth;
-    const y = ((1 - anchor.y) / 2) * viewport.clientHeight;
+    const x = ((anchor.x + 1) / 2) * vw;
+    const y = ((1 - anchor.y) / 2) * vh;
     beacon.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
     beacon.style.opacity = strength.toFixed(3);
   };
 
-  // Définition : ordinateur, 1,75 au plus ; téléphone, jusqu'à 2, baissée d'un cran si les images ralentissent.
-  const phoneSteps = [2, 1.5, 1.25, 1].map((v) => Math.min(window.devicePixelRatio, v));
-  let phoneLevel = 0;
-  let slowFrames = 0;
-  const pixelRatio = () => (narrow.matches ? phoneSteps[phoneLevel] : Math.min(window.devicePixelRatio, 1.75));
+  // Définition : ordinateur, 1,75 au plus ; téléphone, jusqu'à 2, adaptée au rythme réel de l'écran, jamais sous 1,25
+  // (quality.ts).
+  const phoneQuality = createQuality([2, 1.75, 1.5, 1.25].map((v) => Math.min(window.devicePixelRatio, v)), () => resize());
+  const pixelRatio = () => (narrow.matches ? phoneQuality.ratio : Math.min(window.devicePixelRatio, 1.75));
 
   let dirty = true;
   let wasNarrow = narrow.matches;
@@ -614,7 +634,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     }
     // Téléphone : la voiture détourée sur sa place de parking, les pièces nommées au bleu de la marque.
     uniforms.uCutout.value = narrow.matches ? 1 : 0;
-    uniforms.uAccent.value = narrow.matches ? 1 : 0;
+    accent = narrow.matches ? 1 : 0;
     if (narrow.matches) scene.add(ground, plate);
     else scene.remove(ground, plate);
     for (const material of scanMaterials) {
@@ -623,9 +643,11 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
         material.needsUpdate = true;
       }
     }
+    vw = viewport.clientWidth;
+    vh = viewport.clientHeight;
     renderer.setPixelRatio(pixelRatio());
-    renderer.setSize(viewport.clientWidth, viewport.clientHeight, false);
-    const aspect = viewport.clientWidth / viewport.clientHeight;
+    renderer.setSize(vw, vh, false);
+    const aspect = vw / vh;
     camera.aspect = aspect;
     camera.fov = narrow.matches
       ? Math.max(30, aspect > 0.6 ? MathUtils.radToDeg(2 * Math.atan((Math.tan(MathUtils.degToRad(21)) * 0.6) / aspect)) : 42)
@@ -643,7 +665,20 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   let current = progress.read();
   const follow = createFollow(narrow);
   at(current);
+  await breathe();
   await renderer.compileAsync(scene, camera);
+  performance.mark('inspection:compiled');
+  // Textures envoyées au GPU une par image, plutôt qu'en un seul bloc au premier rendu (à-coup à l'entrée de la Méthode).
+  const textures = new Set<Texture>();
+  scene.traverse((node) => {
+    const map = ((node as Mesh).material as ShaderMaterial | undefined)?.uniforms?.map?.value as Texture | undefined;
+    if (map) textures.add(map);
+  });
+  for (const texture of textures) {
+    renderer.initTexture(texture);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+  performance.mark('inspection:textures');
 
   let raf = 0;
   let lastTime = 0;
@@ -671,19 +706,16 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
       current = follow.step(current, target, dt);
       changed = true;
     }
-    if (!changed) return;
+    if (!changed) {
+      if (narrow.matches) phoneQuality.tick(dt, false, now);
+      return;
+    }
     dirty = false;
     render();
+    if (!canvas.classList.contains('is-ready')) performance.mark('inspection:first-frame');
     canvas.classList.add('is-ready');
-    if (!narrow.matches) return;
-    // La fluidité d'abord : un cran de définition en moins dès que les images passent sous ~45 i/s.
-    if (dt > 1 / 45) slowFrames++;
-    else slowFrames = Math.max(0, slowFrames - 1);
-    if (slowFrames > 12 && phoneLevel < phoneSteps.length - 1) {
-      phoneLevel++;
-      slowFrames = 0;
-      resize();
-    }
+    // Téléphone : définition adaptée au rythme réel de l'écran.
+    if (narrow.matches) phoneQuality.tick(dt, true, now);
   };
 
   const start = () => {

@@ -1,7 +1,8 @@
 ---
+import { buildCoast, curve } from '../content/coast';
 import { contact, zone } from '../content/site';
 
-const phone = contact.phones.value[0];
+const [phone, second] = contact.phones.value;
 const towns = zone.towns.value;
 
 // Carte schématique (pas un fond cartographique) : projection équirectangulaire locale,
@@ -125,16 +126,83 @@ const pins = towns.map((t) => {
     dy: below ? '2.1em' : '-0.3em',
   };
 });
+
+// — Téléphone : la carte étendue, de Cannes à Beaulieu-sur-Mer (tracé et lignes de sonde : src/content/coast.ts) ;
+// l'ordinateur garde la sienne.
+const sea = buildCoast();
+const at = sea.project;
+const PV = sea.view;
+const PKM = sea.km;
+// Communes : Nice à gauche, Villeneuve-Loubet dessous (trop proche de Cagnes), les autres à droite.
+const phonePins = towns.map((t) => {
+  const [x, y] = at([t.lon, t.lat]);
+  const left = t.name === 'Nice';
+  const below = t.name === 'Villeneuve-Loubet';
+  return {
+    name: t.name,
+    coords: `${dm(t.lat)}N · ${dm(t.lon)}E`,
+    x,
+    y,
+    lx: below ? x - 8 : left ? x - 26 : x + 26,
+    side: below ? 'below' : left ? 'left' : 'right',
+    anchor: left ? 'end' : 'start',
+    dy: below ? '2.1em' : '-0.3em',
+  };
+});
+const phoneAt = new Map(phonePins.map((p) => [p.name, [p.x, p.y] as Pt]));
+const phoneTour = [
+  phoneAt.get('Nice'),
+  at([7.22, 43.672]),
+  at([7.19, 43.668]),
+  phoneAt.get('Cagnes-sur-Mer'),
+  phoneAt.get('Villeneuve-Loubet'),
+  at([7.118, 43.63]),
+  at([7.12, 43.603]),
+  phoneAt.get('Antibes'),
+].filter((p): p is Pt => Boolean(p));
+// Le point de la tournée entre par la basse corniche, depuis Èze-sur-Mer : Beaulieu, Villefranche, le port de Nice.
+const phoneEntry = (
+  [
+    [7.372, 43.7245], [7.352, 43.7168], [7.333, 43.7088], [7.322, 43.7048], [7.311, 43.7058], [7.298, 43.6962], [7.286, 43.6982],
+  ] as Pt[]
+).map(at);
+const phoneReach = curve(phoneTour);
+const phoneRoute = curve([...phoneEntry, ...phoneTour]);
+// La nuit sur la côte : la lueur chaude des villes, discrète (centre, rayon en km).
+const glows = (
+  [
+    [7.255, 43.71, 4], [7.005, 43.56, 3], [7.11, 43.58, 2.6], [7.07, 43.575, 1.4], [7.15, 43.67, 1.8], [7.185, 43.68, 1.5],
+    [7.125, 43.656, 1], [7.325, 43.705, 1.1],
+  ] as [number, number, number][]
+).map(([lon, lat, r]) => ({ c: at([lon, lat]), r: r * PKM }));
+// Repères : les deux bouts de la côte, et ce qui la dessine (caps, îles, fleuve), les eaux.
+const places = [
+  { name: 'Cannes', at: at([7.0174, 43.5513]), anchor: 'middle', dx: 0, dy: -20 },
+  { name: 'Beaulieu-sur-Mer', at: at([7.3322, 43.7076]), anchor: 'end', dx: 14, dy: -28 },
+];
+const features = [
+  { text: 'Cap d’Antibes', at: at([7.13, 43.5413]), anchor: 'start', dx: 14, dy: 30 },
+  { text: 'Cap Ferrat', at: at([7.329, 43.6718]), anchor: 'middle', dx: 0, dy: 40 },
+  { text: 'Îles de Lérins', at: at([7.0655, 43.517]), anchor: 'start', dx: 16, dy: 14 },
+  { text: 'Var', at: at([7.1925, 43.738]), anchor: 'start', dx: 10, dy: 0 },
+];
+const phoneSea = at([7.25, 43.556]);
+const phoneBay = at([7.22, 43.606]);
+const phoneMeridians = [7.0, 7.1, 7.2, 7.3].map((lon) => at([lon, 43.7])[0]);
+const phoneParallels = [43.55, 43.6, 43.65, 43.7, 43.75].map((lat) => at([7.2, lat])[1]);
+const phoneScale = { x: PV.w - 44 - 5 * PKM, y: PV.h - 34 };
 ---
 
 <section class="zone" id="zone" aria-labelledby="zone-title">
+  <!-- Téléphone : la ligne de relevé en tête de la zone, qui monte sur la Méthode (relais). -->
+  <span class="zone__line" aria-hidden="true"></span>
   <div class="wrap zone__grid">
     <div class="zone__head">
       <p class="label zone__kicker">Zone d’intervention</p>
       <h2 class="zone__title" id="zone-title">Où est garé votre véhicule&nbsp;?</h2>
     </div>
 
-    <figure class="zone__map">
+    <figure class="zone__map zone__map--desk" data-map data-door="30">
       <svg viewBox={`${VIEW.x} ${VIEW.y} ${VIEW.w} ${VIEW.h}`} role="img" aria-labelledby="zone-map-title">
         <title id="zone-map-title">
           Carte schématique du littoral entre Antibes et Nice, avec {towns.map((t) => t.name).join(', ')}.
@@ -174,7 +242,7 @@ const pins = towns.map((t) => {
 
         {
           pins.map((p) => (
-            <g class="zone__pin" data-pin={p.name}>
+            <g class="zone__pin" data-pin={p.name} data-x={f(p.x)} data-y={f(p.y)}>
               <circle cx={f(p.x)} cy={f(p.y)} r="48" class="zone__hit" />
               <g class="zone__mark">
                 <circle cx={f(p.x)} cy={f(p.y)} r="15" class="zone__halo" />
@@ -217,12 +285,132 @@ const pins = towns.map((t) => {
       <figcaption class="label">Carte schématique — {zone.area.value}</figcaption>
     </figure>
 
+    <!-- Téléphone : la carte étendue — le littoral de Cannes à Beaulieu-sur-Mer, ses lignes de sonde, la lueur des
+         villes, et, dans son cartouche, le drapeau du département. Mêmes communes, même tournée. -->
+    <figure class="zone__map zone__map--phone" data-map data-door="34">
+      <div class="zone__layers">
+      <!-- Le fond (côte, sondes, lueurs, repères, cartouche) : dessiné une fois. -->
+      <svg class="zone__base" viewBox={`${PV.x} ${PV.y} ${PV.w} ${PV.h}`} aria-hidden="true">
+        <defs>
+          <radialGradient id="zone-fade-gradient-phone" cx="50%" cy="50%" r="66%">
+            <stop offset="62%" stop-color="#fff"></stop>
+            <stop offset="100%" stop-color="#000"></stop>
+          </radialGradient>
+          <mask id="zone-fade-phone" maskUnits="userSpaceOnUse" x={PV.x} y={PV.y} width={PV.w} height={PV.h}>
+            <rect x={PV.x} y={PV.y} width={PV.w} height={PV.h} fill="url(#zone-fade-gradient-phone)"></rect>
+          </mask>
+          <filter id="zone-soft-phone" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="20"></feGaussianBlur>
+          </filter>
+          <radialGradient id="zone-glow-phone">
+            <stop offset="0%" stop-color="#ffd7a3" stop-opacity="0.16"></stop>
+            <stop offset="45%" stop-color="#ffc98a" stop-opacity="0.06"></stop>
+            <stop offset="100%" stop-color="#ffc98a" stop-opacity="0"></stop>
+          </radialGradient>
+        </defs>
+
+        <g mask="url(#zone-fade-phone)">
+          <path class="zone__land" d={sea.land}></path>
+          {sea.islands.map((d) => <path class="zone__land" d={d} />)}
+          {glows.map((g) => <circle cx={f(g.c[0])} cy={f(g.c[1])} r={f(g.r)} fill="url(#zone-glow-phone)" />)}
+          <g class="zone__graticule">
+            {phoneMeridians.map((x) => <path d={`M${f(x)},${PV.y} V${PV.y + PV.h}`} />)}
+            {phoneParallels.map((y) => <path d={`M${PV.x},${f(y)} H${PV.x + PV.w}`} />)}
+          </g>
+          {sea.soundings.map((lines, i) => lines.map((d) => <path class="zone__sounding" d={d} style={`--depth: ${i}`} />))}
+          <path class="zone__river" d={sea.river}></path>
+          <path class="zone__reach" d={phoneReach} filter="url(#zone-soft-phone)"></path>
+          <path class="zone__coast" d={sea.coast}></path>
+          {sea.islands.map((d) => <path class="zone__coast" d={d} />)}
+        </g>
+
+        <text class="zone__water zone__water--sea" x={f(phoneSea[0])} y={f(phoneSea[1])} text-anchor="middle">Méditerranée</text>
+        <text class="zone__water zone__water--bay" x={f(phoneBay[0])} y={f(phoneBay[1])} text-anchor="middle">Baie des Anges</text>
+        {
+          features.map((m) => (
+            <text class="zone__feature" x={f(m.at[0] + m.dx)} y={f(m.at[1] + m.dy)} text-anchor={m.anchor}>
+              {m.text}
+            </text>
+          ))
+        }
+        {
+          places.map((p) => (
+            <g class="zone__place">
+              <circle cx={f(p.at[0])} cy={f(p.at[1])} r="5" />
+              <text x={f(p.at[0] + p.dx)} y={f(p.at[1] + p.dy)} text-anchor={p.anchor}>
+                {p.name}
+              </text>
+            </g>
+          ))
+        }
+
+        <!-- Cartouche : le drapeau du département, son nom, son numéro. -->
+        <g class="zone__cartouche" aria-hidden="true">
+          <!-- Le drapeau traditionnel des Alpes-Maritimes (Wikimedia Commons, domaine public). -->
+          <image href="/media/flag-06.svg" x="26" y="26" width="132" height="83.7" preserveAspectRatio="xMidYMid meet"></image>
+          <text class="zone__cartouche-name" x="176" y="60">Alpes-Maritimes</text>
+          <text class="zone__cartouche-num" x="174" y="110">06</text>
+        </g>
+
+        <g class="zone__north" transform="translate(945 72)" aria-hidden="true">
+          <path d="M0,32 V-6"></path>
+          <path class="zone__north-head" d="M-6,4 L0,-10 L6,4 Z"></path>
+          <text y="-22" text-anchor="middle">N</text>
+        </g>
+        <g class="zone__scale" transform={`translate(${f(phoneScale.x)} ${f(phoneScale.y)})`} aria-hidden="true">
+          <path d={`M0,0 H${f(5 * PKM)}`}></path>
+          {[0, 1, 2, 3, 4, 5].map((k) => <path d={`M${f(k * PKM)},0 V${k % 5 ? -6 : -12}`} />)}
+          <text x="0" y="-22">0</text>
+          <text x={f(5 * PKM)} y="-22" text-anchor="end">5 km</text>
+        </g>
+      </svg>
+      <!-- Au-dessus, sur son propre calque : ce qui bouge (tournée, point, repère) et ce qu'on touche (communes) — la
+           tournée animée ne fait jamais redessiner le fond (masque, flou). -->
+      <svg class="zone__over" viewBox={`${PV.x} ${PV.y} ${PV.w} ${PV.h}`} role="img" aria-labelledby="zone-map-title-phone">
+        <title id="zone-map-title-phone">
+          Carte schématique du littoral de Cannes à Beaulieu-sur-Mer, avec {townsText}, et le drapeau des Alpes-Maritimes.
+        </title>
+        <path class="zone__route" d={phoneRoute} pathLength="1" data-route></path>
+
+        {
+          phonePins.map((p) => (
+            <g class="zone__pin" data-pin={p.name} data-x={f(p.x)} data-y={f(p.y)}>
+              <circle cx={f(p.x)} cy={f(p.y)} r="56" class="zone__hit" />
+              <g class="zone__mark">
+                <circle cx={f(p.x)} cy={f(p.y)} r="15" class="zone__halo" />
+                <circle cx={f(p.x)} cy={f(p.y)} r="5.5" class="zone__dot" />
+              </g>
+              <text x={f(p.lx)} y={f(p.y)} text-anchor={p.anchor} data-side={p.side}>
+                <tspan class="zone__name" dy={p.dy}>
+                  {p.name}
+                </tspan>
+                <tspan class="zone__coords" x={f(p.lx)} dy="1.5em">
+                  {p.coords}
+                </tspan>
+                <tspan class="zone__yours" x={f(p.lx)} dy="0">
+                  Votre véhicule
+                </tspan>
+              </text>
+            </g>
+          ))
+        }
+
+        <g class="zone__here" data-here aria-hidden="true">
+          <circle class="zone__here-ring" r="34"></circle>
+          <circle class="zone__here-dot" r="11"></circle>
+        </g>
+        <circle class="zone__van" r="11" cx={f(phoneEntry[0][0])} cy={f(phoneEntry[0][1])} data-van></circle>
+      </svg>
+      </div>
+      <figcaption class="label">Carte schématique, de Cannes à Beaulieu-sur-Mer — {zone.area.value}</figcaption>
+    </figure>
+
     <div class="zone__body">
       <!-- Les choix n'existent qu'avec le script (la carte répond) ; sans lui, la liste des communes ci-dessous. -->
       <div class="zone__towns" role="group" aria-labelledby="zone-title" data-towns hidden>
         {
           pins.map((p) => (
-            <button type="button" class="zone__town" data-town={p.name} data-x={f(p.x)} data-y={f(p.y)} aria-pressed="false">
+            <button type="button" class="zone__town" data-town={p.name} aria-pressed="false">
               {p.name}
             </button>
           ))
@@ -237,6 +425,14 @@ const pins = towns.map((t) => {
       <a class="btn btn--primary zone__cta" href={phone.href}>
         Appeler<span class="btn__sep" aria-hidden="true"></span>{phone.display}
       </a>
+      {
+        second && (
+          <a class="btn btn--ghost zone__cta zone__cta--second" href={second.href}>
+            Appeler<span class="btn__sep" aria-hidden="true" />
+            {second.display}
+          </a>
+        )
+      }
     </div>
   </div>
 </section>
@@ -250,41 +446,65 @@ const pins = towns.map((t) => {
   // tournée parcourt la zone. Un trajet choisi hors écran (sur mobile, les choix sont sous la carte) se
   // joue quand la carte apparaît. Sans script : tracé fixe et liste des communes ; mouvement réduit :
   // mêmes états d'arrivée, sans trajet.
-  const route = document.querySelector<SVGPathElement>('[data-route]');
-  const van = document.querySelector<SVGCircleElement>('[data-van]');
-  const here = document.querySelector<SVGGElement>('[data-here]');
   const answer = document.querySelector<HTMLElement>('[data-answer]');
   const choices = document.querySelector<HTMLElement>('[data-towns]');
   const buttons = choices ? [...choices.querySelectorAll<HTMLButtonElement>('[data-town]')] : [];
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  /** Rayon du repère « Votre véhicule » : le point de la tournée s'arrête à son bord. */
-  const DOOR = 30;
+  const ease = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (2 - 2 * t) ** 3 / 2);
 
-  if (route && van) {
-    const total = route.getTotalLength();
+  /**
+   * Une carte (ordinateur ou téléphone : une seule affichée) — son tracé, le point de la tournée, le repère « Votre
+   * véhicule », ses communes. Rend la fonction qui y pose le véhicule ; hors écran, ou carte masquée, le trajet attend
+   * qu'elle apparaisse.
+   */
+  const setup = (figure: HTMLElement) => {
+    const route = figure.querySelector<SVGPathElement>('[data-route]');
+    const van = figure.querySelector<SVGCircleElement>('[data-van]');
+    const here = figure.querySelector<SVGGElement>('[data-here]');
+    if (!route || !van) return null;
+    /** Rayon du repère « Votre véhicule » : le point de la tournée s'arrête à son bord. */
+    const door = Number(figure.dataset.door ?? 30);
+    // Le tracé, mesuré et échantillonné une fois (240 pas) à la première apparition de la carte : pendant le trajet,
+    // aucune mesure du SVG (chacune forcerait le style et la mise en page de la page entière).
+    const STEPS = 240;
+    let total = 0;
+    let samples: Float32Array | null = null;
+    const table = () => {
+      if (samples) return samples;
+      total = route.getTotalLength();
+      samples = new Float32Array((STEPS + 1) * 2);
+      for (let k = 0; k <= STEPS; k++) {
+        const point = route.getPointAtLength((total * k) / STEPS);
+        samples[k * 2] = point.x;
+        samples[k * 2 + 1] = point.y;
+      }
+      return samples;
+    };
+    const length = () => (table(), total);
     /** Longueur du tracé au plus près d'un point de la carte. */
     const nearest = (x: number, y: number) => {
+      const s = table();
       let best = 0;
       let gap = Infinity;
-      for (let k = 0; k <= 240; k++) {
-        const length = (total * k) / 240;
-        const point = route.getPointAtLength(length);
-        const d = (point.x - x) ** 2 + (point.y - y) ** 2;
+      for (let k = 0; k <= STEPS; k++) {
+        const d = (s[k * 2] - x) ** 2 + (s[k * 2 + 1] - y) ** 2;
         if (d < gap) {
           gap = d;
-          best = length;
+          best = (total * k) / STEPS;
         }
       }
       return best;
     };
     /** Le point de la tournée à une longueur du tracé, et le trait dessiné jusque-là. */
-    const place = (length: number) => {
-      const point = route.getPointAtLength(length);
-      route.style.strokeDashoffset = String(1 - length / total);
-      van.setAttribute('cx', point.x.toFixed(1));
-      van.setAttribute('cy', point.y.toFixed(1));
+    const place = (along: number) => {
+      const s = table();
+      const at = Math.min(Math.max((along / total) * STEPS, 0), STEPS);
+      const k = Math.min(Math.floor(at), STEPS - 1);
+      const t = at - k;
+      route.style.strokeDashoffset = String(1 - along / total);
+      van.setAttribute('cx', (s[k * 2] + (s[k * 2 + 2] - s[k * 2]) * t).toFixed(1));
+      van.setAttribute('cy', (s[k * 2 + 1] + (s[k * 2 + 3] - s[k * 2 + 1]) * t).toFixed(1));
     };
-    const ease = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (2 - 2 * t) ** 3 / 2);
     let run = 0;
     /** Parcourt le tracé jusqu'à `to` ; `stay` : le point reste à l'arrivée, auprès du véhicule. */
     const drive = (to: number, stay: boolean) => {
@@ -296,7 +516,7 @@ const pins = towns.map((t) => {
         van.classList.toggle('is-on', stay);
         return;
       }
-      const duration = 900 + 1500 * (to / total);
+      const duration = 900 + 1500 * (to / length());
       const start = performance.now();
       const step = (now: number) => {
         if (token !== run) return;
@@ -310,20 +530,41 @@ const pins = towns.map((t) => {
 
     let visible = false;
     let toured = false;
-    let pending: number | null = null;
+    let chosen: [number, number] | null = null;
+    let pending = false;
+    const toward = ([x, y]: [number, number]) => Math.max(nearest(x, y) - door, 0);
     if (!still) route.classList.add('is-armed');
     new IntersectionObserver(
       ([entry]) => {
         visible = entry.isIntersecting;
         if (!visible) return;
-        if (pending !== null) drive(pending, true);
-        else if (!toured && !here?.classList.contains('is-set')) drive(total, false);
-        pending = null;
+        if (pending && chosen) drive(toward(chosen), true);
+        else if (!toured && !chosen) drive(length(), false);
+        pending = false;
         toured = true;
       },
       { threshold: 0.35 },
-    ).observe(route.closest('figure') ?? route);
+    ).observe(figure);
 
+    // Sur la carte aussi, toucher une commune la choisit (les boutons restent le chemin du clavier et des
+    // lecteurs d'écran).
+    const pins = [...figure.querySelectorAll<SVGGElement>('[data-pin]')];
+    for (const pin of pins) pin.addEventListener('click', () => buttons.find((b) => b.dataset.town === pin.dataset.pin)?.click());
+    figure.classList.add('is-live');
+    return (town: string) => {
+      const pin = pins.find((p) => p.dataset.pin === town);
+      if (!pin) return;
+      for (const p of pins) p.classList.toggle('is-here', p === pin);
+      chosen = [Number(pin.dataset.x), Number(pin.dataset.y)];
+      here?.setAttribute('transform', `translate(${chosen[0]} ${chosen[1]})`);
+      here?.classList.add('is-set');
+      if (visible) drive(toward(chosen), true);
+      else pending = true;
+    };
+  };
+  const maps = [...document.querySelectorAll<HTMLElement>('[data-map]')].flatMap((figure) => setup(figure) ?? []);
+
+  if (maps.length) {
     // Les communes deviennent des choix : sous eux, seulement ce que la liste ne dit pas.
     choices?.removeAttribute('hidden');
     const around = zone.surroundings.value;
@@ -331,15 +572,8 @@ const pins = towns.map((t) => {
     for (const button of buttons) {
       button.addEventListener('click', () => {
         const town = button.dataset.town ?? '';
-        const x = Number(button.dataset.x);
-        const y = Number(button.dataset.y);
         for (const b of buttons) b.setAttribute('aria-pressed', String(b === button));
-        for (const pin of document.querySelectorAll<SVGGElement>('[data-pin]')) pin.classList.toggle('is-here', pin.dataset.pin === town);
-        here?.setAttribute('transform', `translate(${x} ${y})`);
-        here?.classList.add('is-set');
-        const to = Math.max(nearest(x, y) - DOOR, 0);
-        if (visible || still) drive(to, true);
-        else pending = to;
+        for (const choose of maps) choose(town);
         if (answer) {
           const name = document.createElement('strong');
           name.textContent = town;
@@ -351,25 +585,21 @@ const pins = towns.map((t) => {
         dispatchEvent(new CustomEvent('meca:town', { detail: town }));
       });
     }
-
-    // Sur la carte aussi, toucher une commune la choisit (les boutons restent le chemin du clavier et des
-    // lecteurs d'écran).
-    for (const pin of document.querySelectorAll<SVGGElement>('[data-pin]')) {
-      pin.addEventListener('click', () => buttons.find((b) => b.dataset.town === pin.dataset.pin)?.click());
-    }
-    route.closest('figure')?.classList.add('is-live');
   }
 
-  // Téléphone : relais depuis la Méthode — la zone monte par-dessus sa dernière vue, encore épinglée, couchée
-  // puis redressée (3D) ; la scène s'éteint dessous. Progression : --enter (0 → 1), le haut de la zone allant du
-  // bas au haut de l'écran.
+  // Téléphone : relais depuis la Méthode — la zone monte par-dessus sa dernière vue, encore épinglée ; la scène
+  // s'éteint dessous. Progression (0 → 1) : le haut de la zone allant du bas au haut de l'écran.
   const zoneSection = document.getElementById('zone');
   const method = document.querySelector<HTMLElement>('[data-inspection]');
+  const line = zoneSection?.querySelector<HTMLElement>('.zone__line');
+  const grid = zoneSection?.querySelector<HTMLElement>('.zone__grid');
+  const veil = method?.querySelector<HTMLElement>('.method__viewport');
   const phone = matchMedia('(max-width: 899px)');
-  if (zoneSection && method) {
+  if (zoneSection && method && line && grid && veil) {
     let frame = 0;
-    // Haut de la zone dans la page, relevé à la mise en page seulement ; les propriétés ne sont réécrites que si
-    // elles changent : le défilement ne coûte ni mesure ni recalcul de style.
+    // Haut de la zone dans la page, relevé à la mise en page seulement ; les valeurs ne sont réécrites que si elles
+    // changent, et seulement sur les trois pièces qui bougent — la ligne, le contenu de la zone, le voile de la Méthode —,
+    // jamais en variable héritée par toute une section : le défilement ne coûte ni mesure ni recalcul de style.
     let top = 0;
     let stale = true;
     let last = '';
@@ -377,7 +607,9 @@ const pins = towns.map((t) => {
       frame = 0;
       zoneSection.classList.toggle('is-handoff', phone.matches);
       if (!phone.matches) {
-        method.style.removeProperty('--handoff');
+        veil.style.removeProperty('--handoff');
+        line.style.removeProperty('opacity');
+        grid.style.removeProperty('opacity');
         stale = true;
         last = '';
         return;
@@ -386,11 +618,13 @@ const pins = towns.map((t) => {
         top = zoneSection.getBoundingClientRect().top + window.scrollY;
         stale = false;
       }
-      const enter = Math.min(Math.max(1 - (top - window.scrollY) / window.innerHeight, 0), 1).toFixed(3);
-      if (enter === last) return;
-      last = enter;
-      zoneSection.style.setProperty('--enter', enter);
-      method.style.setProperty('--handoff', enter);
+      const enter = Math.min(Math.max(1 - (top - window.scrollY) / window.innerHeight, 0), 1);
+      const key = enter.toFixed(3);
+      if (key === last) return;
+      last = key;
+      line.style.opacity = (1 - 0.85 * enter).toFixed(3);
+      grid.style.opacity = Math.min(Math.max(enter * 1.8 - 0.35, 0), 1).toFixed(3);
+      veil.style.setProperty('--handoff', key);
     };
     const schedule = () => {
       frame ||= requestAnimationFrame(update);
@@ -416,6 +650,11 @@ const pins = towns.map((t) => {
 
   /* Desktop : la question et les choix à gauche, centrés face à la carte. Mobile : question, carte, choix
      — la carte reste à l'écran quand on choisit. */
+  /* Ligne de relevé du relais : téléphone, avec le script, seulement. */
+  .zone__line {
+    display: none;
+  }
+
   .zone__grid {
     display: grid;
     grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
@@ -536,7 +775,23 @@ const pins = towns.map((t) => {
     margin-top: 1.75rem;
   }
 
-  .zone__map svg {
+  /* Téléphone : les deux numéros, deux boutons d'appel pleine largeur (le second n'existe pas sur ordinateur). */
+  .zone__cta--second {
+    display: none;
+  }
+
+  @media (max-width: 899px) {
+    .zone__cta {
+      display: flex;
+      width: 100%;
+    }
+
+    .zone__cta--second {
+      margin-top: 0.625rem;
+    }
+  }
+
+  .zone__map > svg {
     width: 100%;
     height: auto;
     overflow: visible;
@@ -796,23 +1051,18 @@ const pins = towns.map((t) => {
         var(--ink);
     }
 
-    /* La ligne : fine, sa lueur bleue portée vers la scène qu'elle balaie ; elle s'éteint à l'arrivée. */
-    .zone:global(.is-handoff)::before {
-      content: '';
+    /* La ligne : fine, sa lueur bleue portée vers la scène qu'elle balaie ; elle s'éteint à l'arrivée. Son opacité,
+       comme celle du contenu qui se révèle derrière elle, est posée par le script, sur ces deux pièces seulement. */
+    .zone:global(.is-handoff) .zone__line {
       position: absolute;
       inset: 0 0 auto;
+      display: block;
       height: 1px;
       background: var(--blue-soft);
       box-shadow:
         0 0 12px 1px rgb(134 166 255 / 0.7),
         0 -18px 48px 6px rgb(36 85 255 / 0.28);
-      opacity: calc(1 - 0.85 * var(--enter, 1));
       pointer-events: none;
-    }
-
-    /* Le contenu se révèle derrière la ligne (opacité seule). */
-    .zone:global(.is-handoff) .zone__grid {
-      opacity: clamp(0, calc(var(--enter, 1) * 1.8 - 0.35), 1);
     }
   }
 
@@ -878,4 +1128,121 @@ const pins = towns.map((t) => {
     }
   }
 
+  /* — Téléphone : la carte étendue ———————————————— */
+
+  /* Deux cartes : l'ordinateur garde la sienne (d'Antibes à Nice) ; le téléphone a celle de Cannes à Beaulieu-sur-Mer,
+     avec le drapeau du département. Une seule est affichée. */
+  .zone__map--phone {
+    display: none;
+  }
+
+  @media (max-width: 899px) {
+    .zone__map--desk {
+      display: none;
+    }
+
+    .zone__map--phone {
+      display: block;
+    }
+  }
+
+  /* Deux calques superposés : le fond, dessiné une fois ; au-dessus, sur son propre calque de composition, la tournée
+     animée, le point, le repère et les communes. */
+  .zone__layers {
+    display: grid;
+  }
+
+  .zone__layers > svg {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  .zone__base {
+    pointer-events: none;
+  }
+
+  .zone__over {
+    will-change: transform;
+  }
+
+  .zone__river {
+    fill: none;
+    stroke: var(--blue-soft);
+    stroke-width: 1.25;
+    vector-effect: non-scaling-stroke;
+    opacity: 0.45;
+  }
+
+  .zone__map--phone .zone__reach {
+    stroke-width: 81;
+  }
+
+  .zone__map--phone .zone__route {
+    stroke-width: 6.5;
+  }
+
+  .zone__map--phone .zone__name {
+    font-size: 40px;
+  }
+
+  .zone__map--phone .zone__coords,
+  .zone__map--phone .zone__yours {
+    font-size: 27px;
+  }
+
+  .zone__map--phone .zone__water--sea {
+    font-size: 30px;
+  }
+
+  .zone__map--phone .zone__water--bay {
+    font-size: 25px;
+  }
+
+  .zone__map--phone .zone__north text,
+  .zone__map--phone .zone__scale text {
+    font-size: 22px;
+  }
+
+  .zone__place circle {
+    fill: var(--text-2);
+  }
+
+  .zone__place text,
+  .zone__feature {
+    paint-order: stroke;
+    stroke: var(--ink);
+    stroke-width: 6px;
+    stroke-linejoin: round;
+    font-style: italic;
+  }
+
+  .zone__place text {
+    fill: var(--text-2);
+    font-size: 27px;
+    letter-spacing: 0.03em;
+  }
+
+  .zone__feature {
+    fill: var(--text-3);
+    font-size: 22px;
+    letter-spacing: 0.05em;
+  }
+
+  .zone__cartouche-name {
+    fill: var(--text-2);
+    font-stretch: var(--semi);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .zone__cartouche-num {
+    fill: var(--text);
+    font-stretch: var(--wide);
+    font-weight: 800;
+    font-size: 46px;
+  }
 </style>

@@ -150,9 +150,11 @@ textarea {
   contain-intrinsic-size: auto 1000px;
 }
 
-/* Téléphone : la zone monte par-dessus la Méthode, sa ligne de relevé déborde au-dessus d'elle (Territory). */
+/* Téléphone : la zone monte par-dessus la Méthode, sa ligne de relevé déborde au-dessus d'elle (Territory). La demande
+   est mise en page dès le chargement (sous l'entrée), et non à l'arrivée sur la carte : aucun à-coup à ce moment-là. */
 @media (max-width: 899px) {
-  #zone.is-handoff {
+  #zone.is-handoff,
+  #demande {
     content-visibility: visible;
   }
 }

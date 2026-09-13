@@ -105,7 +105,26 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
         const paces = stops.map((el) => INSPECTION_PACES[el.dataset.stop ?? '']);
         mountCaptions(root, stops, progress, narrow, paces, { firstUntil: 0.35 });
         if (!webgl || !canvas) return;
-        import('../3d/inspection')
+        // La mise en place (chargement, compilation) attend un temps calme — ni pendant les flammes de l'Échappement, ni
+        // pendant un geste —, au plus 3 s : aucune saccade là où l'œil regarde.
+        const calm = () =>
+          new Promise<void>((resolve) => {
+            const html = document.documentElement;
+            const deadline = performance.now() + 3000;
+            let moved = performance.now();
+            const onScroll = () => (moved = performance.now());
+            addEventListener('scroll', onScroll, { passive: true });
+            const check = () => {
+              const now = performance.now();
+              if (now > deadline || (!('flames' in html.dataset) && now - moved > 250)) {
+                removeEventListener('scroll', onScroll);
+                resolve();
+              } else setTimeout(check, 100);
+            };
+            check();
+          });
+        calm()
+          .then(() => import('../3d/inspection'))
           .then(({ createInspection }) => createInspection({ root, canvas, stops, progress, narrow }))
           .catch((error) => {
             console.warn('[inspection] 3D indisponible, relevé fixe conservé.', error);
@@ -397,6 +416,11 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
   /* — Mobile : le véhicule en haut, le texte en feuilles qui montent par-dessus ——— */
 
   @media (max-width: 899px) {
+    /* Relais vers la zone : le voile de nuit passe par le compositeur (aucun redessin plein écran à chaque pas). */
+    .method__viewport::before {
+      will-change: opacity;
+    }
+
     .insp {
       display: block;
       min-height: 0;
