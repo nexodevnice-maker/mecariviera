@@ -2,13 +2,14 @@ import {
   CatmullRomCurve3,
   Color,
   MathUtils,
+  Mesh,
   PerspectiveCamera,
+  PlaneGeometry,
   Scene,
   ShaderMaterial,
   SRGBColorSpace,
   Vector3,
   WebGLRenderer,
-  type Mesh,
   type MeshBasicMaterial,
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -199,6 +200,8 @@ uniform float uReveal;
 uniform float uIsolate;
 uniform vec3 uInk;
 uniform vec3 uLine;
+uniform float uCutout; // téléphone : la voiture seule, détourée
+uniform float uAccent; // téléphone : la pièce nommée au bleu de la marque
 varying vec2 vUv;
 varying vec3 vWorld;
 
@@ -218,6 +221,11 @@ void main() {
   vec3 tex = texture2D(map, vUv).rgb;
   float lum = dot(tex, vec3(0.2126, 0.7152, 0.0722));
   vec3 car = toCar(vWorld);
+  vec2 q = abs(car.xz) - CAR_HALF + 0.4;
+  float outside = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.4;
+  // Téléphone : la voiture détourée — le sol du relevé et ce qui dépasse son emprise sont retirés ; la place de
+  // parking les remplace.
+  if (uCutout > 0.5 && (vWorld.y < 0.045 || outside > 0.1)) discard;
   // Nuit : luminance seule, froide et basse ; un cran plus clair derrière la ligne de scan (relevé).
   float dx = car.x - uSweep;
   float scanned = uSweepMix * (1.0 - smoothstep(-0.3, 0.02, dx));
@@ -238,19 +246,71 @@ void main() {
   color *= mix(1.0, 0.3, uIsolate * (1.0 - spill));
   color += color * 0.4 * uFocusMix * spill * (1.0 - core);
   color = mix(color, tex * mix(vec3(0.94, 0.96, 1.0), vec3(1.06, 1.02, 0.95), core), uFocusMix * core);
+  // Téléphone : la pièce nommée prend le bleu de la marque — un lavis sur elle, un contour lumineux autour.
+  color = mix(color, color * vec3(0.7, 0.86, 1.3) + uLine * 0.1, uAccent * uFocusMix * core * 0.4);
+  color += uLine * uAccent * uFocusMix * 0.45 * smoothstep(0.72, 0.95, d) * (1.0 - smoothstep(0.95, 1.25, d));
   // Ligne de scan : trait fin (largeur constante à l'écran) et halo en couleurs réelles.
   float line = uSweepMix * (1.0 - smoothstep(0.005, 0.005 + 1.5 * fwidth(dx), abs(dx)));
   float glow = uSweepMix * exp(-dx * dx / 0.04);
   color = mix(color, tex, glow * 0.7);
   color += uLine * (line * 1.2 + glow * 0.1);
   // Sol : bien plus sombre que la voiture, puis fondu dans le fond de page au-delà de l'emprise.
-  vec2 q = abs(car.xz) - CAR_HALF + 0.4;
-  float outside = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.4;
   color *= mix(0.25, 1.0, smoothstep(0.02, 0.2, vWorld.y));
   color = mix(color, uInk, smoothstep(0.0, 0.4, outside));
   // À l'ouverture, ce que la ligne n'a pas encore relevé se confond avec le fond de page : pas de
   // silhouette, seulement la ligne et ce qu'elle a déjà lu.
   color = mix(uInk, color, clamp(max(max(uReveal, scanned), glow * 0.7 + line), 0.0, 1.0));
+  gl_FragColor = vec4(color, 1.0);
+  #include <colorspace_fragment>
+}`;
+
+// Téléphone : la place de parking où la voiture est garée — bitume de nuit, lignes blanches de sa place et des
+// voisines, fond de place devant le capot, ombre douce sous la voiture ; la ligne de relevé y passe aussi.
+const groundFragment = /* glsl */ `
+uniform vec3 uInk;
+uniform vec3 uLine;
+uniform float uSweep;
+uniform float uSweepMix;
+varying vec3 vWorld;
+
+const vec2 CAR_CENTER = vec2(0.055, -0.359);
+const vec2 CAR_FORWARD = vec2(0.9026, -0.4305);
+const vec2 CAR_SIDE = vec2(0.4305, 0.9026);
+const vec2 CAR_HALF = vec2(2.02, 0.92);
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+void main() {
+  vec2 rel = vWorld.xz - CAR_CENTER;
+  vec2 car = vec2(dot(rel, CAR_FORWARD), dot(rel, CAR_SIDE)); // (longueur, largeur)
+  float grain = noise(vWorld.xz * 2.3) * 0.6 + noise(vWorld.xz * 9.0) * 0.4;
+  vec3 color = vec3(0.034, 0.037, 0.045) * mix(0.75, 1.25, grain);
+  // Marquage : lignes latérales tous les 2,6 m (la voiture au milieu de sa place), fond de place devant le capot.
+  float aa = fwidth(car.y) * 1.5 + 0.003;
+  float side = (1.0 - smoothstep(0.05, 0.05 + aa, abs(fract(car.y / 2.6) - 0.5) * 2.6)) * (1.0 - smoothstep(2.85, 2.9, abs(car.x)));
+  float end = (1.0 - smoothstep(0.05, 0.05 + fwidth(car.x) * 1.5 + 0.003, abs(car.x - 2.9))) * (1.0 - smoothstep(6.4, 6.5, abs(car.y)));
+  float paint = max(side, end) * mix(0.7, 1.0, noise(vWorld.xz * 24.0));
+  color = mix(color, vec3(0.3, 0.31, 0.34), paint * 0.85);
+  // Ombre de la voiture sur le sol (occlusion douce sous son emprise).
+  vec2 q = abs(car) - CAR_HALF + 0.3;
+  float footprint = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.3;
+  color *= mix(0.35, 1.0, smoothstep(-0.25, 0.35, footprint));
+  // La ligne de relevé passe aussi sur le sol.
+  float dx = car.x - uSweep;
+  float line = uSweepMix * (1.0 - smoothstep(0.005, 0.005 + 1.5 * fwidth(dx), abs(dx)));
+  float glow = uSweepMix * exp(-dx * dx / 0.04);
+  color += uLine * (line * 0.7 + glow * 0.05);
+  // La place dans un halo de nuit, fondue dans le fond de page au-delà.
+  color = mix(color, uInk, smoothstep(2.4, 6.0, length(car * vec2(0.55, 0.85))));
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
 }`;
@@ -288,6 +348,8 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     uIsolate: { value: 0 },
     uInk: { value: new Color(INK) },
     uLine: { value: new Color(LINE) },
+    uCutout: { value: 0 },
+    uAccent: { value: 0 },
   };
 
   MeshoptDecoder.useWorkers?.(2);
@@ -304,6 +366,13 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     source.dispose();
   });
   scene.add(gltf.scene);
+  // Téléphone : la place de parking sous la voiture détourée (dans la scène sur téléphone seulement, resize).
+  const ground = new Mesh(
+    new PlaneGeometry(26, 26),
+    new ShaderMaterial({ uniforms: { ...uniforms }, vertexShader, fragmentShader: groundFragment }),
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(0.055, 0, -0.359);
 
   // — Caméra et éclairage : interpolés d'arrêt en arrêt, avec un palier pendant la lecture.
   const keys = stops.map((el) => el.dataset.stop as Key);
@@ -335,6 +404,8 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     out.set(lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t));
 
   const at = (p: number) => {
+    // Borné : l'amorti peut dépasser un instant les extrémités du parcours.
+    p = Number.isFinite(p) ? Math.min(Math.max(p, 0), last) : 0;
     const i = Math.min(Math.floor(p), Math.max(last - 1, 0));
     // Chaque segment a son rythme : celui du cadrage visé. La ligne de scan, elle, avance à vitesse
     // constante pendant son segment — un balayage, pas un glissé.
@@ -389,6 +460,24 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     callout.style.opacity = strength.toFixed(3);
   };
 
+  // — Téléphone : la lumière bleue d'identification sur la pièce nommée (le trait de rappel reste à l'ordinateur).
+  const beacon = root.querySelector<HTMLElement>('[data-beacon]');
+  const drawBeacon = (p: number) => {
+    if (!beacon) return;
+    const k = Math.round(p);
+    const point = shots[k]?.anchor;
+    const strength = 1 - Math.min(Math.abs(p - k) / 0.2, 1);
+    if (!narrow.matches || !point || strength <= 0) {
+      beacon.style.opacity = '0';
+      return;
+    }
+    anchor.set(...point).project(camera);
+    const x = ((anchor.x + 1) / 2) * viewport.clientWidth;
+    const y = ((1 - anchor.y) / 2) * viewport.clientHeight;
+    beacon.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    beacon.style.opacity = strength.toFixed(3);
+  };
+
   // Définition : ordinateur, 1,75 au plus ; téléphone, jusqu'à 2, baissée d'un cran si les images ralentissent.
   const phoneSteps = [2, 1.5, 1.25].map((v) => Math.min(window.devicePixelRatio, v));
   let phoneLevel = 0;
@@ -402,6 +491,11 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
       wasNarrow = narrow.matches;
       buildPath();
     }
+    // Téléphone : la voiture détourée sur sa place de parking, les pièces nommées au bleu de la marque.
+    uniforms.uCutout.value = narrow.matches ? 1 : 0;
+    uniforms.uAccent.value = narrow.matches ? 1 : 0;
+    if (narrow.matches) scene.add(ground);
+    else scene.remove(ground);
     renderer.setPixelRatio(pixelRatio());
     renderer.setSize(viewport.clientWidth, viewport.clientHeight, false);
     const aspect = viewport.clientWidth / viewport.clientHeight;
@@ -430,6 +524,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     at(current);
     renderer.render(scene, camera);
     drawCallout(current);
+    drawBeacon(current);
     progress.show(current);
   };
 

@@ -209,3 +209,23 @@ près, seul l'anticrénelage de quelques lettres de la marque, désormais décou
   passe à un écran ; le pas guidé suivant se pose sur la zone.
 - **Définition** : rendu jusqu'à 2 fois la densité de l'écran (1,5 avant), baissé d'un cran si les images
   ralentissent, dans les deux scènes ; filtrage anisotrope 16× (baie, relevé) et 8× (sol).
+
+### 2026-09-13 — Téléphone : Snapchat, allumage du lampadaire, inspection sur sa place, relais par la ligne de relevé
+Sous 900 px uniquement ; l'ordinateur reste tel quel (scène identique au pixel près, 19 programmes GPU).
+- **En-tête** : le Snapchat de MECA RIVIERA (fantôme au trait, lien @mecariviera26) entre la marque et la
+  disponibilité « 7j/7 · 24h/24 », qui remplace le numéro — toujours dans le hero et la barre d'appel.
+- **Allumage** : au lancement, la nuit — la pleine lune (clair de lune froid, dirigé depuis la lune du décor)
+  éclaire une partie de la voiture et de l'esplanade. Au premier geste, les lampadaires s'allument : la lanterne
+  voisine s'amorce en papillotant (petite surface), passe du blanc à sa lumière chaude, sa flaque s'élargit, un
+  cône de lumière descend dans l'air ; un lampadaire de l'autre trottoir, hors champ, éclaire la face visible du
+  véhicule, avec un seul éclat pendant que les reflets glissent sur la carrosserie — 1,6 s, dans le temps du
+  premier pas. La luminosité d'ensemble monte d'un seul tenant (aucun clignotement de grande surface) ; mouvement
+  réduit : allumé d'emblée. Pas de phares du mécanicien sur téléphone ; les lampadaires s'éteignent avec la scène.
+- **Inspection** : la voiture capot ouvert détourée (le sol du relevé retiré) et garée dans une place marquée — la
+  place d'abord, vide, puis la ligne de relevé y fait apparaître la voiture ; les pièces nommées prennent le bleu
+  de la marque (lavis, contour) et leur lumière d'identification.
+- **Relais vers la zone** : l'inclinaison 3D, qui brouillait les textes en perspective, est remplacée par la ligne
+  de relevé — le bord de la zone est un trait bleu lumineux qui monte et balaie la dernière vue, la carte révélée
+  derrière lui ; sans transformation, les textes restent nets.
+- **Garde** : le parcours des deux scènes est borné (l'amorti pouvait en dépasser le début un instant et
+  interrompre le rendu de l'inspection).

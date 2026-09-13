@@ -23,6 +23,8 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
       <circle class="method__callout-ring" r="8"></circle>
       <circle class="method__callout-dot" r="2.5"></circle>
     </svg>
+    <!-- Téléphone : repère lumineux de la pièce nommée (placé par l'inspection 3D). -->
+    <span class="method__beacon" data-beacon></span>
   </div>
 
   <div class="method__content">
@@ -188,6 +190,67 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
 
   .method__callout-dot {
     fill: var(--paper);
+  }
+
+  /* Téléphone : la pièce nommée porte la lumière bleue d'identification (comme les services du hero) — un point
+     net, une lueur courte qui respire à peine ; immobile en mouvement réduit ; absente sur ordinateur. */
+  .method__beacon {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .method__beacon::before,
+  .method__beacon::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .method__beacon::before {
+    z-index: 1;
+    width: 7px;
+    height: 7px;
+    background: #dbe5ff;
+    box-shadow: 0 0 5px 1px rgb(134 166 255 / 0.85);
+  }
+
+  .method__beacon::after {
+    width: 30px;
+    height: 30px;
+    background: radial-gradient(circle, rgb(36 85 255 / 0.6) 0%, rgb(36 85 255 / 0) 70%);
+    animation: method-beacon 2.6s ease-in-out infinite;
+  }
+
+  @keyframes method-beacon {
+    0%,
+    100% {
+      opacity: 0.65;
+      transform: translate(-50%, -50%) scale(0.9);
+    }
+
+    50% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .method__beacon::after {
+      animation: none;
+    }
+  }
+
+  @media (min-width: 900px) {
+    .method__beacon {
+      display: none;
+    }
   }
 
   .method__content {
