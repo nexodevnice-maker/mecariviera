@@ -9,6 +9,7 @@
     "preview": "astro preview",
     "assets:3d": "node scripts/optimize-3d.mjs",
     "assets:env": "node scripts/bake-env.mjs",
+    "assets:bay": "node scripts/bay-assets.mjs",
     "assets:posters": "node scripts/capture-posters.mjs",
     "content:check": "node scripts/content-check.mjs",
     "qa:shots": "node scripts/qa-shots.mjs",

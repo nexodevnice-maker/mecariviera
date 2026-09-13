@@ -24,6 +24,7 @@ bleue désigne la pièce du service. Les règles de conception et de vérité du
 | `npm run content:check` | **Gate de publication** : liste tout ce qui n'est pas `CONFIRMED` (`-- --strict` pour échouer) |
 | `npm run assets:3d [-- a1-scan c63 rs3 m4]` | Optimise les sources `3D/` vers `public/3d/` (desktop + `-m` mobile) ; logos et plaques effacés |
 | `npm run assets:env` | Pré-calcule l'éclairage du studio (`public/3d/studio-env.hdr`) |
+| `npm run assets:bay` | Décor du premier plan tiré de la photo de la baie (`unnamed.jpg`, hors version) : bande large, bande haute, calque de la lune (`public/media/riviera-*.webp`) |
 | `npm run assets:posters [-- stage\|inspection]` | Capture les affiches fixes : hero (`public/media/stage-*`), Méthode (`public/media/inspection-*`) — serveur de dev requis |
 | `npm run qa:shots [-- <dossier>]` | Captures de chaque arrêt et section, desktop + mobile, erreurs console, audit axe |
 | `npm run qa:perf` | FCP, LCP, CLS, TBT, octets, jalons 3D sur le build servi en 4322 (profil mobile bridé ; véhicule fixé par `QA_VEHICLE`, C63 par défaut) |

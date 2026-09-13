@@ -157,14 +157,16 @@ const SHOTS: Record<Key, Shot> = {
     reveal: 1,
     isolate: 0.6,
   },
-  // Prendre de la hauteur : la voiture vue d'en haut, petite sur le noir — le point de la carte qui
-  // suit. Même cap que le cadrage précédent (pas de roulis en montant) ; la lampe s'éteint. Arrivée
-  // avant la fin du segment : un temps d'arrêt sur la voiture devenue point.
+  // Prendre de la hauteur. Ordinateur : la voiture vue d'en haut, petite sur le noir — le point de la carte qui
+  // suit (même cap que le cadrage précédent, pas de roulis) ; arrivée avant la fin du segment, un temps d'arrêt
+  // sur la voiture devenue point. Téléphone : un recul mesuré — la voiture entière, de trois quarts et
+  // d'au-dessus, dans le même axe —, puis la zone d'intervention monte par-dessus (Territory.astro). La lampe
+  // s'éteint.
   depart: {
     position: [1.36, 40, -1.09],
     target: [0.055, 0, -0.359],
     shift: 0.2,
-    mobile: { position: [1.36, 48, -1.09], shift: 0.22 },
+    mobile: { position: [8.37, 7.6, -4.99], target: [0.055, 0.2, -0.359], shift: 0.22 },
     focus: BAY,
     radii: BAY_RADII,
     focusMix: 0,
@@ -292,7 +294,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   const gltf = await new GLTFLoader()
     .setMeshoptDecoder(MeshoptDecoder)
     .loadAsync(narrow.matches ? '/3d/a1-scan-m.glb' : '/3d/a1-scan.glb');
-  const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const anisotropy = Math.min(narrow.matches ? 16 : 8, renderer.capabilities.getMaxAnisotropy());
   gltf.scene.traverse((node) => {
     const mesh = node as Mesh;
     if (!mesh.isMesh) return;
@@ -387,6 +389,12 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     callout.style.opacity = strength.toFixed(3);
   };
 
+  // Définition : ordinateur, 1,75 au plus ; téléphone, jusqu'à 2, baissée d'un cran si les images ralentissent.
+  const phoneSteps = [2, 1.5, 1.25].map((v) => Math.min(window.devicePixelRatio, v));
+  let phoneLevel = 0;
+  let slowFrames = 0;
+  const pixelRatio = () => (narrow.matches ? phoneSteps[phoneLevel] : Math.min(window.devicePixelRatio, 1.75));
+
   let dirty = true;
   let wasNarrow = narrow.matches;
   const resize = () => {
@@ -394,7 +402,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
       wasNarrow = narrow.matches;
       buildPath();
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, narrow.matches ? 1.5 : 1.75));
+    renderer.setPixelRatio(pixelRatio());
     renderer.setSize(viewport.clientWidth, viewport.clientHeight, false);
     const aspect = viewport.clientWidth / viewport.clientHeight;
     camera.aspect = aspect;
@@ -445,6 +453,14 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     dirty = false;
     render();
     canvas.classList.add('is-ready');
+    if (!narrow.matches) return;
+    if (dt > 1 / 24) slowFrames++;
+    else slowFrames = Math.max(0, slowFrames - 1);
+    if (slowFrames > 8 && phoneLevel < phoneSteps.length - 1) {
+      phoneLevel++;
+      slowFrames = 0;
+      resize();
+    }
   };
 
   const start = () => {

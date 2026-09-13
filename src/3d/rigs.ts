@@ -82,14 +82,13 @@ export type StopKey = 'hero' | 'overview' | 'engine' | 'wheel' | 'front' | 'cock
 export const RIGS: Record<'c63', Record<StopKey, Shot>> = {
   c63: {
     // Arriver : depuis la route, à hauteur de conducteur ; la voiture garée sur la corniche, la baie derrière.
-    // (Mobile : de plus loin, là où s'arrête le véhicule du mécanicien, debout sur la route — l'horizon descend,
-    // la lune et la baie tiennent au-dessus du toit, avec du ciel entre eux ; le texte dessous ; l'approche
-    // devient une marche.)
+    // (Mobile : un peu plus loin, debout sur la chaussée — la voiture au centre de la scène, bien posée dans sa
+    // place, l'esplanade et son garde-corps derrière elle, la lune et la baie au-dessus ; le texte dessous.)
     hero: {
       position: [6.86, 1.38, 8.22],
       target: [0.1, 0.6, 0],
       shift: 0.28,
-      mobile: { position: [14.08, 2.3, 16.9], target: [0, 0.6, 0], shift: 0.12 },
+      mobile: { position: [11.0, 2.35, 13.2], target: [-0.1, 0.5, -0.4], shift: 0.15 },
     },
     // S'approcher : à pied, dans l'axe des phares ; départ au premier pixel, arrivée longuement posée.
     overview: shot([3.7, 1.62, 4.6], [0.3, 0.75, 0.9], 0.25, { pace: { window: [0, 0.9], ease: 'out' } }),

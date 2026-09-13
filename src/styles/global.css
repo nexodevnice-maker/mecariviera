@@ -120,6 +120,13 @@ textarea {
   text-transform: uppercase;
 }
 
+/* Marque, sur téléphone : « MECA » au bleu clair de la charte, « RIVIERA » dans la couleur du texte. */
+@media (max-width: 899px) {
+  .meca {
+    color: var(--blue-soft);
+  }
+}
+
 /* Grain argentique léger (desktop) : de la matière sur la carrosserie et les dégradés, sans relever
    les noirs (fusion « overlay »). Absent sur mobile : aucun coût de composition sur petit GPU. */
 @media (min-width: 900px) {

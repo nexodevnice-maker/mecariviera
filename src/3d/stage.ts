@@ -1,20 +1,25 @@
 import {
   AdditiveBlending,
   Box3,
+  BoxGeometry,
   BufferGeometry,
   CanvasTexture,
   CatmullRomCurve3,
   Color,
   CubeUVReflectionMapping,
+  CylinderGeometry,
   DataTexture,
   DoubleSide,
   EquirectangularReflectionMapping,
   Float32BufferAttribute,
   Fog,
+  Group,
+  InstancedMesh,
   LinearFilter,
   LinearMipmapLinearFilter,
   LinearSRGBColorSpace,
   MathUtils,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -28,6 +33,8 @@ import {
   RGBAFormat,
   Scene,
   ShaderMaterial,
+  Sprite,
+  SpriteMaterial,
   SRGBColorSpace,
   Vector3,
   WebGLRenderer,
@@ -41,12 +48,34 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { createFollow } from '../motion/follow';
 import { guided } from '../motion/guide';
 import type { StageProgress } from '../motion/stage-progress';
-import { BAY, BAY_MOBILE, createBay, type BayPlacement } from './bay';
+import { BANDS, createBay, FIT_TALL, FIT_WIDE, type BayFit } from './bay';
 import { guidedPace, paced, RIGS, type Framing, type Shot, type StopKey } from './rigs';
 import { STUDIO_ENV_SIGMA, STUDIO_PANELS } from './studio';
 import { vehicleById, type VehicleId } from './vehicles';
 
 const INK = 0x0b0c0e;
+/**
+ * Plan du lieu (m) — x vers la chaussée (côté conducteur), z vers l'avant du véhicule. Bordure du trottoir côté
+ * passager et sa pierre : sur ordinateur, la baie commence au-delà.
+ */
+const KERB = -1.3;
+const KERB_STONE = 0.16;
+/**
+ * Téléphone : la place de stationnement marquée (ligne de rive, longueur d'une place, axe de la chaussée),
+ * l'esplanade jusqu'au garde-corps de la corniche (EDGE) et ses lampadaires — mât côté garde-corps, lanterne au
+ * bout de la crosse, au-dessus de l'esplanade.
+ */
+const BAY_LINE = 1.15;
+const BAY_LENGTH = 6;
+const CENTER_LINE = 4.4;
+const EDGE = -6.4;
+const LAMP_X = -5.7;
+const LAMP_REACH = 0.72;
+const LAMP_HEIGHT = 3.7;
+const LAMP_Z = [-3, -25, -47, 19];
+const glsl = (n: number) => n.toFixed(2);
+const LAMP_GLSL = LAMP_Z.map((z) => `vec2(${glsl(LAMP_X + LAMP_REACH)}, ${glsl(z)})`).join(', ');
+const LAMP_HEADS_GLSL = LAMP_Z.map((z) => `vec3(${glsl(LAMP_X + LAMP_REACH)}, ${glsl(LAMP_HEIGHT - 0.17)}, ${glsl(z)})`).join(', ');
 /** Arrivée des phares : un temps de nuit, puis l'approche. */
 const INTRO_DELAY_MS = 400;
 const INTRO_MS = 2800;
@@ -60,7 +89,13 @@ interface StageOptions {
   progress: StageProgress;
   narrow: MediaQueryList;
   vehicle: VehicleId;
-  assets: { model: Promise<ArrayBuffer>; environment: Promise<ArrayBuffer | null>; bay: Promise<ImageBitmap | null> };
+  assets: {
+    model: Promise<ArrayBuffer>;
+    environment: Promise<ArrayBuffer | null>;
+    bay: Promise<ImageBitmap | null>;
+    bayBand: keyof typeof BANDS;
+    moon: Promise<ImageBitmap | null>;
+  };
 }
 
 const nextFrame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
@@ -94,8 +129,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   scene.environment = environment ? bakedStudio(environment) : studio(renderer);
   performance.mark('stage:env');
 
-  // Plan lointain au-delà de la baie (photo à 55 m de l'origine, jusqu'à ~80 m de la caméra).
-  const camera = new PerspectiveCamera(30, 1, 0.1, 110);
+  // Plan lointain au-delà du décor de la baie (à 100 m de la caméra du premier arrêt, bay.ts).
+  const camera = new PerspectiveCamera(30, 1, 0.1, 200);
 
   // Décodage de la géométrie compressée hors du fil principal.
   MeshoptDecoder.useWorkers?.(2);
@@ -103,13 +138,21 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const car = prepareCar(gltf.scene);
   const road = street();
   scene.add(car, contactShadow(car), road);
-  // Le lointain : la baie de Villefranche la nuit (photo) ; à défaut, des lumières de côte dessinées.
-  const bayImage = await assets.bay;
-  const backdrop = bayImage ? createBay(bayImage, Math.min(8, renderer.capabilities.getMaxAnisotropy())) : null;
+  // Téléphone : le bord de la corniche — garde-corps et lampadaires (dans la scène sur téléphone seulement, resize :
+  // l'ordinateur ne les compile jamais) ; le sol reste net au loin (filtrage anisotrope du grain de matière).
+  const corniche = promenade();
+  (road.material as ShaderMaterial).uniforms.uNoise.value.anisotropy = narrow.matches
+    ? Math.min(8, renderer.capabilities.getMaxAnisotropy())
+    : 1;
+  // Le décor : la baie de Villefranche la nuit (photo, bande du format de l'écran) et sa lune ; à défaut, des
+  // lumières de côte dessinées.
+  const [bayImage, moonImage] = await Promise.all([assets.bay, assets.moon]);
+  const backdrop = bayImage
+    ? createBay(bayImage, BANDS[assets.bayBand], moonImage, Math.min(narrow.matches ? 16 : 8, renderer.capabilities.getMaxAnisotropy()))
+    : null;
   if (backdrop) {
     scene.add(backdrop.mesh);
-    // La route est une corniche : au-delà du bord de mer, plus de sol — la baie se voit en contrebas.
-    (road.material as ShaderMaterial).uniforms.uCut.value = -6.5;
+    if (backdrop.moon) scene.add(backdrop.moon);
   }
   const lights = coastLights();
   scene.add(lights);
@@ -134,13 +177,29 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   };
   buildPath();
 
-  const applyOffset = () => {
+  const offset = (target: PerspectiveCamera, amount: number) => {
     const w = viewport.clientWidth;
     const h = viewport.clientHeight;
-    if (narrow.matches) camera.setViewOffset(w, h, 0, h * shift, w, h);
+    if (narrow.matches) target.setViewOffset(w, h, 0, h * amount, w, h);
     // Sous 1440 px, la colonne de texte pèse plus lourd dans la largeur : le véhicule se décale un peu plus.
-    else camera.setViewOffset(w, h, -w * (shift + Math.max(0, 1 - w / 1440) * 0.08), 0, w, h);
-    camera.updateProjectionMatrix();
+    else target.setViewOffset(w, h, -w * (amount + Math.max(0, 1 - w / 1440) * 0.08), 0, w, h);
+    target.updateProjectionMatrix();
+  };
+  const applyOffset = () => offset(camera, shift);
+
+  // Caméra du premier arrêt (même projection) : le décor de la baie se cale sur elle, au format de l'écran.
+  const hero = new PerspectiveCamera();
+  const fitBackdrop = (options: Partial<BayFit> = {}) => {
+    if (!backdrop) return null;
+    const [first] = framings;
+    hero.fov = camera.fov;
+    hero.aspect = camera.aspect;
+    hero.far = camera.far;
+    hero.position.set(...first.position);
+    hero.lookAt(...first.target);
+    offset(hero, first.shift);
+    // Le décor couvre tout ce qui est au-delà du sol : la bordure (ordinateur), le garde-corps (téléphone).
+    return backdrop.fit(hero, narrow.matches ? EDGE : KERB, { ...(narrow.matches ? FIT_TALL : FIT_WIDE), ...options });
   };
 
   // Extinction (dernier arrêt) : les phares d'abord — leur flaque quitte la chaussée —, puis la rue, la mer
@@ -159,6 +218,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     const t = paced(p - i, guided.matches ? guidedPace(next.pace) : next.pace);
     const out = next.lightsOut;
     applyNight(out ? Math.min(Math.max((p - i - out[0]) / (out[1] - out[0]), 0), 1) : 0);
+    // Au premier plan, la baie est nette ; dès que le mécanicien s'approche, la mise au point passe au véhicule.
+    backdrop?.focus(MathUtils.smoothstep(p, 0.9, 2.2));
     const u = lastStop > 0 ? (i + t) / lastStop : 0;
     positions.getPoint(u, camera.position);
     targets.getPoint(u, lookAt);
@@ -215,7 +276,10 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   };
 
   // — Dimensions et qualité : la définition baisse d'un cran si les images ralentissent.
-  const dprSteps = [narrow.matches ? 1.5 : 1.75, 1.25, 1, 0.75].map((v) => Math.min(window.devicePixelRatio, v));
+  // Téléphone : jusqu'à 2 (définition haute sur écran dense) ; ordinateur : 1,75.
+  const dprSteps = (narrow.matches ? [2, 1.5, 1.25, 1, 0.75] : [1.75, 1.25, 1, 0.75]).map((v) =>
+    Math.min(window.devicePixelRatio, v),
+  );
   let dprLevel = 0;
   let slowFrames = 0;
   let dirty = true;
@@ -229,7 +293,13 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     renderer.setPixelRatio(dprSteps[dprLevel]);
     renderer.setSize(viewport.clientWidth, viewport.clientHeight, false);
     lights.visible = !backdrop && !narrow.matches;
-    backdrop?.place(narrow.matches ? BAY_MOBILE : BAY);
+    // Le sol selon le format. Ordinateur : la route s'arrête au début du trottoir, après la pierre de bordure,
+    // la baie au-delà. Téléphone : la place marquée, l'esplanade et son garde-corps, la baie au-delà.
+    const ground = (road.material as ShaderMaterial).uniforms;
+    ground.uMobile.value = narrow.matches ? 1 : 0;
+    ground.uCut.value = backdrop ? (narrow.matches ? EDGE - 0.05 : KERB - KERB_STONE) : -1000;
+    if (narrow.matches) scene.add(corniche);
+    else scene.remove(corniche);
     (lights.material as ShaderMaterial).uniforms.uPixelRatio.value = renderer.getPixelRatio();
     const aspect = viewport.clientWidth / viewport.clientHeight;
     camera.aspect = aspect;
@@ -241,6 +311,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
         ? MathUtils.radToDeg(2 * Math.atan((Math.tan(MathUtils.degToRad(15)) * 1.6) / aspect))
         : 30;
     applyOffset();
+    fitBackdrop();
     progress.measure();
     dirty = true;
   };
@@ -281,7 +352,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   performance.mark('stage:compiled', { detail: { programs: renderer.info.programs?.length } });
 
   // Envoi des textures au GPU une par image, plutôt qu'en un seul bloc au premier rendu.
-  for (const texture of collectTextures(scene, scene.environment, backdrop?.texture)) {
+  for (const texture of collectTextures(scene, scene.environment, ...(backdrop?.textures ?? []))) {
     renderer.initTexture(texture);
     await nextFrame();
   }
@@ -398,31 +469,11 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
           render();
           return Number(ms.toFixed(1));
         },
-        // Réglage de la baie (placement, découpe du sol au bord de mer) : captures comparatives.
-        bay(next: Partial<BayPlacement> & { cut?: number | null } = {}) {
-          const { cut, ...placement } = next;
-          if (cut !== undefined) (road.material as ShaderMaterial).uniforms.uCut.value = cut ?? -1000;
-          const state = backdrop?.place(placement) ?? null;
+        // Réglage du décor de la baie (calage, exposition, lune) : captures comparatives.
+        bay(next: Partial<BayFit> = {}) {
+          const state = fitBackdrop(next);
           render();
-          // Contrôle : rangées de la photo (haut, lune, horizon, milieu, bas) dans la scène et à l'écran.
-          const rows: { v: number; world: number[]; screenY: number }[] = [];
-          if (backdrop) {
-            const { mesh } = backdrop;
-            mesh.updateMatrixWorld(true);
-            const h = (mesh.geometry as PlaneGeometry).parameters.height;
-            for (const v of [0, 0.11, 0.245, 0.5, 1]) {
-              const world = mesh.localToWorld(new Vector3(0, (0.5 - v) * h, 0));
-              const ndc = world.clone().project(camera);
-              rows.push({ v, world: world.toArray().map((n) => Number(n.toFixed(1))), screenY: Number(((1 - ndc.y) / 2).toFixed(3)) });
-            }
-          }
-          return {
-            ...state,
-            cut: (road.material as ShaderMaterial).uniforms.uCut.value,
-            scale: backdrop?.mesh.scale.toArray(),
-            rows,
-            camera: camera.position.toArray().map((n) => Number(n.toFixed(2))),
-          };
+          return state;
         },
         info() {
           return {
@@ -535,10 +586,17 @@ uniform vec3 uInk;
 uniform float uArrival;
 uniform float uHeadlights;
 uniform float uCut;
+uniform float uMobile; // 1 : téléphone — place marquée, esplanade, lampadaires ; 0 : ordinateur
 uniform sampler2D uNoise;
 varying vec3 vWorld;
 
-const float KERB = -1.3;                // bordure du trottoir, côté passager
+const float KERB = ${glsl(KERB)};  // bordure du trottoir, côté passager
+const float KERB_STONE = ${glsl(KERB_STONE)};
+const float BAY_LINE = ${glsl(BAY_LINE)};       // ligne de rive des places, côté chaussée
+const float BAY_LENGTH = ${glsl(BAY_LENGTH)};   // une place : le véhicule au milieu de la sienne
+const float CENTER_LINE = ${glsl(CENTER_LINE)}; // axe de la chaussée (tirets)
+// Lanternes des lampadaires de l'esplanade (x, z).
+const vec2 LAMPS[4] = vec2[4](${LAMP_GLSL});
 // Phares du véhicule du mécanicien, garé derrière la caméra du premier arrêt, dirigés vers la voiture.
 const vec2 VAN = vec2(9.6, 11.5);
 const vec2 AIM = vec2(-0.641, -0.768);
@@ -567,35 +625,63 @@ float beam(vec2 p, vec2 lamp) {
   return light * (1.0 - shadow);
 }
 
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
 void main() {
   vec2 p = vWorld.xz;
-  // Au-delà du bord de mer, plus de sol : le lointain (la baie) se voit en contrebas.
+  // Au-delà du sol, la baie en contrebas : ordinateur, dès la bordure du trottoir ; téléphone, au garde-corps.
   if (p.x < uCut) discard;
-  // Matière : bitume (usure en grandes plages, reprises, granulat) à faible contraste, jamais une trame ;
-  // trottoir plus fin et plus clair au-delà de la bordure.
-  float pavement = smoothstep(KERB + 0.02, KERB - 0.02, p.x);
+  float mobile = step(0.5, uMobile);
+  float aa = fwidth(p.x) + fwidth(p.y);
+  // Matière : bitume (usure en grandes plages, reprises, granulat) à faible contraste, jamais une trame.
   float wear = grain(p, 0.0026) * 0.6 + grain(p, 0.013) * 0.4;
   float aggregate = grain(p, 0.26) * 0.6 + grain(p, 0.65) * 0.4;
   float albedo = 0.035 * mix(0.75, 1.25, wear) * mix(0.82, 1.18, aggregate);
-  albedo = mix(albedo, 0.05 * mix(0.9, 1.1, grain(p, 0.1)) * mix(0.9, 1.1, aggregate), pavement);
+
+  // Téléphone : la place marquée — ligne de rive continue, séparations des places (le véhicule au milieu de la
+  // sienne), axe de la chaussée en tirets ; peinture blanche un peu usée.
+  float onRoad = smoothstep(KERB - 0.01, KERB + 0.01, p.x);
+  float rive = 1.0 - smoothstep(0.06, 0.06 + aa, abs(p.x - BAY_LINE));
+  float between = abs(fract((p.y - BAY_LENGTH * 0.5) / BAY_LENGTH + 0.5) - 0.5) * BAY_LENGTH;
+  float bays = (1.0 - smoothstep(0.06, 0.06 + aa, between)) * onRoad * (1.0 - smoothstep(BAY_LINE - 0.01, BAY_LINE + 0.01, p.x));
+  float dash = (1.0 - smoothstep(0.06, 0.06 + aa, abs(p.x - CENTER_LINE))) * step(fract(p.y / 7.0), 0.45);
+  float paint = max(max(rive, bays), dash) * mobile * mix(0.7, 1.0, grain(p, 0.9));
+  albedo = mix(albedo, 0.42, paint);
+
+  // La bordure du trottoir : une pierre claire.
+  float pavement = smoothstep(KERB + 0.02, KERB - 0.02, p.x);
+  albedo = mix(albedo, 0.1 * mix(0.9, 1.1, grain(p, 0.4)) * mix(0.9, 1.1, aggregate), pavement);
+  // Téléphone : au-delà, l'esplanade — dalles de 1,2 × 0,6 m en quinconce, aux joints longs tendus vers le
+  // garde-corps et la baie (ils mènent le regard) ; chaque dalle un peu différente.
+  float plaza = smoothstep(KERB - KERB_STONE + 0.01, KERB - KERB_STONE - 0.01, p.x) * mobile;
+  vec2 slab = vec2((KERB - KERB_STONE - p.x) / 1.2, p.y / 0.6);
+  slab.x += step(0.5, fract(slab.y * 0.5)) * 0.5;
+  vec2 f = fract(slab);
+  float jointGap = min(min(f.x, 1.0 - f.x) * 1.2, min(f.y, 1.0 - f.y) * 0.6);
+  float joint = (1.0 - smoothstep(0.006, 0.012 + aa, jointGap)) * (1.0 - smoothstep(9.0, 24.0, length(vWorld - cameraPosition)));
+  float tone = 0.085 * mix(0.85, 1.15, hash(floor(slab))) * mix(0.92, 1.08, grain(p, 0.3));
+  albedo = mix(albedo, tone * (1.0 - 0.55 * joint), plaza);
   // Caniveau plus sombre au pied de la bordure ; arête de la bordure qui accroche la lumière.
   albedo *= 1.0 - 0.3 * smoothstep(KERB + 0.35, KERB + 0.05, p.x) * (1.0 - pavement);
   float edge = (1.0 - smoothstep(0.0, 0.03 + length(fwidth(p)), abs(p.x - KERB))) * 0.5;
 
-  // Lumière : nuit (la chaussée non éclairée disparaît), lampadaires de la promenade tous les 24 m,
-  // phares du mécanicien.
+  // Lumière : nuit (la chaussée non éclairée disparaît), lampadaires — de la promenade tous les 24 m
+  // (ordinateur), de l'esplanade (téléphone) —, phares du mécanicien.
   vec3 light = vec3(0.06, 0.068, 0.09);
   for (int k = 0; k < 4; k++) {
     vec2 r = p - vec2(-2.7, 3.0 - float(k) * 24.0);
-    light += vec3(1.0, 0.8, 0.58) * 0.9 * exp(-dot(r, r) / 20.0);
+    vec2 s = p - LAMPS[k];
+    light += vec3(1.0, 0.8, 0.58) * mix(0.9 * exp(-dot(r, r) / 20.0), 1.25 * exp(-dot(s, s) / 14.0), mobile);
   }
   vec2 side = PERP * 0.72;
   vec2 lamp = VAN - AIM * 9.0 * (1.0 - uArrival);
   light += vec3(0.85, 0.9, 1.0) * 1.7 * (beam(p, lamp + side) + beam(p, lamp - side)) * smoothstep(0.0, 0.35, uArrival) * uHeadlights;
 
   vec3 color = albedo * light * (1.0 + 2.5 * edge);
-  // Au-delà du trottoir, la mer, noire ; au loin, la chaussée se fond dans la nuit.
-  color *= 1.0 - smoothstep(-4.5, -6.5, p.x) * 0.85;
+  // (Ordinateur) au-delà du trottoir, la mer, noire ; au loin, la chaussée se fond dans la nuit.
+  color *= 1.0 - smoothstep(-4.5, -6.5, p.x) * 0.85 * (1.0 - mobile);
   color = mix(color, uInk, smoothstep(14.0, 42.0, length(vWorld - cameraPosition)));
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
@@ -639,6 +725,7 @@ function street() {
       uArrival: { value: 1 },
       uHeadlights: { value: 1 },
       uCut: { value: -1000 },
+      uMobile: { value: 0 },
       uNoise: { value: grainTexture() },
     },
     vertexShader: /* glsl */ `
@@ -653,6 +740,133 @@ function street() {
   const mesh = new Mesh(new PlaneGeometry(160, 160), material);
   mesh.rotation.x = -Math.PI / 2;
   return mesh;
+}
+
+/** Garde-corps et lampadaires : éclairés par la même nuit que le sol (lanternes, ciel, lueur de la baie). */
+const PIECE_VERTEX = /* glsl */ `
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main() {
+  vec4 local = vec4(position, 1.0);
+  vec3 n = normal;
+  #ifdef USE_INSTANCING
+    local = instanceMatrix * local;
+    n = mat3(instanceMatrix) * n;
+  #endif
+  vec4 world = modelMatrix * local;
+  vWorld = world.xyz;
+  vNormal = normalize(mat3(modelMatrix) * n);
+  gl_Position = projectionMatrix * viewMatrix * world;
+}`;
+
+const PIECE_FRAGMENT = /* glsl */ `
+uniform vec3 uInk;
+uniform float uAlbedo;
+uniform float uShine;
+varying vec3 vWorld;
+varying vec3 vNormal;
+const vec3 HEADS[4] = vec3[4](${LAMP_HEADS_GLSL});
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 view = normalize(cameraPosition - vWorld);
+  // Nuit : le ciel par le dessus, la lueur de la baie par l'arrière (côté mer, vers -x).
+  vec3 light = vec3(0.06, 0.068, 0.09) * (0.55 + 0.45 * max(n.y, 0.0)) + vec3(0.07, 0.08, 0.1) * max(-n.x, 0.0);
+  vec3 shine = vec3(0.0);
+  for (int k = 0; k < 4; k++) {
+    vec3 d = HEADS[k] - vWorld;
+    float fall = exp(-dot(d, d) / 26.0);
+    vec3 l = normalize(d);
+    light += vec3(1.0, 0.8, 0.58) * 1.4 * fall * (0.3 + 0.7 * max(dot(n, l), 0.0));
+    shine += vec3(1.0, 0.85, 0.65) * fall * pow(max(dot(reflect(-l, n), view), 0.0), 24.0);
+  }
+  vec3 color = uAlbedo * light + uShine * shine;
+  color = mix(color, uInk, smoothstep(14.0, 42.0, length(vWorld - cameraPosition)));
+  gl_FragColor = vec4(color, 1.0);
+  #include <colorspace_fragment>
+}`;
+
+/** Halo d'une lanterne : dégradé radial, ajouté à la nuit. */
+function glowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const g = canvas.getContext('2d') as CanvasRenderingContext2D;
+  const gradient = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.2, 'rgba(255,255,255,0.4)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gradient;
+  g.fillRect(0, 0, 64, 64);
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
+/**
+ * Téléphone : le bord de la corniche — un muret de pierre surmonté d'un garde-corps (main courante, lisse basse,
+ * barreaux tous les 12 cm, poteaux tous les 2,4 m) ; les lampadaires de l'esplanade (mât, crosse, lanterne
+ * allumée et son halo). Aucune lumière de scène : les matières calculent la nuit du sol.
+ */
+function promenade() {
+  const group = new Group();
+  const piece = (albedo: number, shine: number) =>
+    new ShaderMaterial({
+      uniforms: { uInk: { value: new Color(INK) }, uAlbedo: { value: albedo }, uShine: { value: shine } },
+      vertexShader: PIECE_VERTEX,
+      fragmentShader: PIECE_FRAGMENT,
+    });
+  const stone = piece(0.13, 0.04);
+  const metal = piece(0.05, 0.8);
+  const [z0, z1] = [-72, 32];
+  const length = z1 - z0;
+  const middle = (z0 + z1) / 2;
+
+  const wall = new Mesh(new BoxGeometry(0.34, 0.4, length), stone);
+  wall.position.set(EDGE, 0.2, middle);
+  const rail = new Mesh(new BoxGeometry(0.07, 0.05, length), metal);
+  rail.position.set(EDGE, 1.1, middle);
+  const lower = new Mesh(new BoxGeometry(0.04, 0.035, length), metal);
+  lower.position.set(EDGE, 0.52, middle);
+  group.add(wall, rail, lower);
+
+  const matrix = new Matrix4();
+  const row = (width: number, height: number, step: number) => {
+    const count = Math.floor(length / step);
+    const mesh = new InstancedMesh(new BoxGeometry(width, height, width), metal, count);
+    for (let i = 0; i < count; i++) mesh.setMatrixAt(i, matrix.makeTranslation(EDGE, 0.4 + height / 2, z0 + step * (i + 0.5)));
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.frustumCulled = false;
+    return mesh;
+  };
+  group.add(row(0.018, 0.68, 0.12), row(0.06, 0.72, 2.4));
+
+  const lens = new MeshBasicMaterial({ color: new Color(1, 0.86, 0.64).multiplyScalar(2.4) });
+  const halo = new SpriteMaterial({
+    map: glowTexture(),
+    color: 0xffc58a,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.6,
+  });
+  for (const z of LAMP_Z) {
+    const x = LAMP_X + LAMP_REACH;
+    const pole = new Mesh(new CylinderGeometry(0.045, 0.075, LAMP_HEIGHT, 14), metal);
+    pole.position.set(LAMP_X, LAMP_HEIGHT / 2, z);
+    const arm = new Mesh(new BoxGeometry(LAMP_REACH + 0.05, 0.05, 0.05), metal);
+    arm.position.set(LAMP_X + LAMP_REACH / 2, LAMP_HEIGHT - 0.03, z);
+    const head = new Mesh(new BoxGeometry(0.42, 0.13, 0.26), metal);
+    head.position.set(x, LAMP_HEIGHT - 0.1, z);
+    // La lanterne, tournée vers le sol.
+    const glass = new Mesh(new PlaneGeometry(0.36, 0.2), lens);
+    glass.rotation.x = Math.PI / 2;
+    glass.position.set(x, LAMP_HEIGHT - 0.17, z);
+    const glow = new Sprite(halo);
+    glow.scale.setScalar(2.4);
+    glow.position.set(x, LAMP_HEIGHT - 0.25, z);
+    group.add(pole, arm, head, glass, glow);
+  }
+  return group;
 }
 
 /** Pseudo-aléatoire déterministe : le même panorama à chaque visite (affiches comprises). */

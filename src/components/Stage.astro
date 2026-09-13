@@ -71,7 +71,7 @@ const SPAN: Record<CarZone, number> = { front: 80, engine: 110, wheel: 110, cock
     <div class="hero" data-stop="hero">
       <div class="hero__panel" data-caption>
         <p class="hero__eyebrow label">
-          <span class="hero__brand">MECA RIVIERA</span>
+          <span class="hero__brand"><span class="meca">MECA</span> RIVIERA</span>
           <span class="hero__eyebrow-sep" aria-hidden="true"></span>
           <span>Mécanique automobile à domicile</span>
         </p>
@@ -211,7 +211,11 @@ const SPAN: Record<CarZone, number> = { front: 80, engine: 110, wheel: 110, cock
       content: '';
       position: absolute;
       inset: 0;
-      background: linear-gradient(90deg, var(--ink) 0%, rgb(11 12 14 / 0.72) 26%, rgb(11 12 14 / 0) 44%);
+      /* Et, sous l'en-tête transparent du haut de page, un voile : le ciel éclairé par la lune ne passe pas
+         derrière les liens. */
+      background:
+        linear-gradient(180deg, rgb(11 12 14 / 0.6) 0%, rgb(11 12 14 / 0) 17%),
+        linear-gradient(90deg, var(--ink) 0%, rgb(11 12 14 / 0.72) 26%, rgb(11 12 14 / 0) 44%);
       pointer-events: none;
     }
   }
@@ -223,7 +227,9 @@ const SPAN: Record<CarZone, number> = { front: 80, engine: 110, wheel: 110, cock
       content: '';
       position: absolute;
       inset: 0;
-      background: linear-gradient(0deg, var(--ink) 0%, rgb(11 12 14 / 0.7) 28%, rgb(11 12 14 / 0) 52%);
+      background:
+        linear-gradient(180deg, rgb(11 12 14 / 0.55) 0%, rgb(11 12 14 / 0) 13%),
+        linear-gradient(0deg, var(--ink) 0%, rgb(11 12 14 / 0.7) 28%, rgb(11 12 14 / 0) 52%);
       pointer-events: none;
     }
   }

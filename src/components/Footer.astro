@@ -4,6 +4,8 @@ import Mark from './Mark.astro';
 
 const phones = contact.phones.value;
 const year = new Date().getFullYear();
+// Marque : « MECA » au bleu clair de la charte.
+const [brandFirst, ...brandWords] = brand.name.value.split(' ');
 ---
 
 <footer class="footer">
@@ -11,7 +13,7 @@ const year = new Date().getFullYear();
     <div class="footer__top">
       <a class="footer__brand" href="/" aria-label="MECA RIVIERA — accueil">
         <Mark class="footer__mark" />
-        <span>{brand.name.value}</span>
+        <span><span class="meca">{brandFirst}</span> {brandWords.join(' ')}</span>
       </a>
       <p class="footer__line">{brand.activity.value} — {zone.area.value}</p>
       <ul class="footer__phones">

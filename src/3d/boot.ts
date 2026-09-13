@@ -53,12 +53,12 @@ export function bootStage(root: HTMLElement | null) {
       environment: fetch(STUDIO_ENV_URL)
         .then((r) => (r.ok ? r.arrayBuffer() : null))
         .catch(() => null),
-      // Le lointain de la première scène (photo de la baie) : décodé hors du fil principal, déjà retourné
-      // pour WebGL. À défaut, la scène garde ses lumières de côte dessinées.
-      bay: fetch(`/media/riviera-bay${narrow.matches ? '-m' : ''}.webp`)
-        .then((r) => (r.ok ? r.blob() : null))
-        .then((blob) => (blob ? createImageBitmap(blob, { imageOrientation: 'flipY' }) : null))
-        .catch(() => null),
+      // Le décor de la première scène (photo de la baie) : la bande du format de l'écran — large en paysage,
+      // haute en portrait —, décodée hors du fil principal, déjà retournée pour WebGL ; la lune à part. À défaut,
+      // la scène garde ses lumières de côte dessinées.
+      bay: loadBitmap(`/media/riviera-bay${narrow.matches ? '-m' : ''}.webp`),
+      bayBand: narrow.matches ? ('tall' as const) : ('wide' as const),
+      moon: loadBitmap('/media/riviera-moon.webp'),
     };
     assets.model.catch(() => {}); // rejet traité par createStage (évite un avertissement anticipé)
 
@@ -72,6 +72,12 @@ export function bootStage(root: HTMLElement | null) {
         fallback();
       });
   };
+  function loadBitmap(url: string) {
+    return fetch(url)
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((blob) => (blob ? createImageBitmap(blob, { imageOrientation: 'flipY' }) : null))
+      .catch(() => null);
+  }
   const idle = (fn: () => void) =>
     'requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 1200 }) : setTimeout(fn, 150);
 

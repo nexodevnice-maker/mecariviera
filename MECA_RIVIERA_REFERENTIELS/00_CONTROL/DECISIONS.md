@@ -35,7 +35,8 @@ Mesures appliquées : crédit auteur + licence affichés sur le site, aucune mis
 - **Performance** : environnement de studio précalculé (`public/3d/studio-env.hdr`, format CubeUV), shaders compilés en parallèle, textures envoyées au GPU progressivement, géométrie décodée en workers, logos et textures invisibles retirés au pipeline. TBT mesuré : 12,9 s → ~1,5 s (desktop), 7,2 s → ~1,8 s (mobile bridé).
 - **Contenu** : statuts de vérité dans `src/content/site.ts` ; `npm run content:check` sert de gate de publication.
 - **Formulaire** : mode test tant que `PUBLIC_FORM_ENDPOINT` n'est pas défini (aucun envoi réseau), transmission par SMS proposée à l'utilisateur.
-- **Pré-lancement** : `noindex` tant que `PUBLIC_INDEXABLE` ≠ `true`.
+- **Pré-lancement** : `noindex` tant que `PUBLIC_INDEXABLE` ≠ `true` (remplacé le 2026-09-12 : voir « SEO de
+  production »).
 
 ### 2026-09-11 — Affiche, sélecteur de véhicule, logos
 - **Affiche du hero** : image fixe capturée sur la scène réelle (10–15 Ko), affichée immédiatement puis relayée par la 3D ; c'est aussi le repli sans WebGL ou en économie de données.
@@ -135,3 +136,76 @@ conséquence. Remplace, pour le parcours, les descriptions de la passe de finiti
   affichée ; licences et attributions conservées dans `src/content/site.ts` ; point bloquant de publication
   `publication.creditsDisplay` (licences à acquérir ou attribution à rétablir — la clause NC exclut un usage
   commercial en l'état).
+
+### 2026-09-12 — SEO de production (demande du porteur)
+- **Adresse** : `https://nexodev.pages.dev` (Cloudflare Pages, projet `nexodev`, branche `main`) devient `site` ;
+  `publication.domain` confirmé. Remplace la règle de pré-lancement : le build de production est indexable
+  (`index, follow`), le serveur de développement jamais ; `PUBLIC_INDEXABLE=false` au build garde une
+  préproduction non indexable. Aucune variable à régler dans Cloudflare.
+- **Balises** : canonique, Open Graph (image de partage : l'affiche RS3 du hero, 1440 × 900), carte Twitter
+  `summary_large_image` sans `twitter:site` (aucun compte connu), vérification Google Search Console.
+- **Sitemap** : généré par `@astrojs/sitemap` (aucun fichier statique) ; `public/robots.txt` l'annonce, sans
+  restriction.
+- **404** : `src/pages/404.astro`, hors index. Sans elle, Cloudflare Pages servait l'accueil (statut 200) pour
+  toute adresse inconnue — `robots.txt` et sitemap compris.
+- **Données structurées** : `WebSite` seul (nom, adresse). Ni LocalBusiness ni Organization : identité de
+  l'exploitant, forme juridique, SIREN et adresse restent à fournir.
+
+### 2026-09-12 — Interactions mobiles : un geste, un plan (demande du porteur)
+Constat : sur téléphone, un balayage lancé parcourait 2 à 4 écrans, soit 3 à 5 arrêts d'un coup ; la caméra
+suivait le doigt presque sans retard (amorti de 0,2 s) et les légendes clignotaient au passage.
+- **Pas guidés** (`src/motion/guide.ts`) : sur écran étroit et pointeur tactile, des points d'arrêt natifs
+  (scroll-snap obligatoire, `scroll-snap-stop: always`) sur chaque arrêt des deux scènes — un geste mène au plan
+  suivant, jamais plusieurs. Le défilement reste natif (aucun détournement du toucher) et redevient libre à
+  partir de la carte. 15 pas, écarts de 425 à 824 px sur un écran de 844 : longueurs de scroll mobiles × 0,8,
+  introduction de Méthode à 80svh, temps d'arrêt final à 16svh. Un pas « phares éteints » (sans texte) entre
+  l'arrière et Méthode : la nuit gagne la voiture avant le noir.
+- **Caméra en ressort critique** (`src/motion/follow.ts`) : départ doux, arrivée sans rebond, ~1 s ; en pas
+  guidés, le mouvement occupe tout le pas (`guidedPace`, rigs.ts) — la lecture se fait à l'arrêt.
+- **Légendes** pilotées par ce que l'écran montre (la caméra), plus par le doigt : elles entrent quand le plan
+  se pose.
+- **Liens internes** : trajet direct, sans pas intermédiaires, jusqu'au premier palier de la section visée.
+- **Toucher** : cibles de 44 px au moins (en-tête, pied de page, puces du formulaire, lien Snapchat), communes
+  touchables sur la carte, pression visible sur les boutons, ni flash gris ni délai de double tap ; envoi du
+  formulaire sur toute la largeur.
+- Desktop inchangé (molette libre, même amorti). Vérifié par gestes tactiles simulés (CDP) : chaque geste arrive
+  sur son point, une seule légende, liens exacts. L'élan d'un vrai doigt ne se simule pas sans appareil : il est
+  borné par `scroll-snap-stop: always`, pris en charge par Safari (iOS 15+) et Chrome.
+
+### 2026-09-13 — Premier plan : la baie en vrai décor (demande du porteur)
+Avant : la photo n'apportait que sa lumière (lune, côte, reflets, en mélange additif) — un panneau flottant dans
+la nuit, séparé de la route par le trottoir puis une mer noire, au même placement quel que soit l'écran.
+- **Décor** (`src/3d/bay.ts`) : la photo entière — ciel éclairé par la lune, collines du cap, port, reflets —,
+  recalée à chaque redimensionnement sur la caméra du premier arrêt : sa partie nette couvre tout le champ
+  au-dessus de la bordure, horizon marin à hauteur d'œil. Ordinateur et tablette en paysage : bande large
+  (2048 px) ; téléphone et tablette en portrait : bande haute (1280 px). Bords fondus dans la nuit pour les autres
+  arrêts (plus longuement à droite, où la ville, coupée par le cadre, s'éteint).
+- **Délimitation** : la route s'arrête au début du trottoir, après une pierre de bordure claire (16 cm) ;
+  au-delà, la baie en contrebas, qui s'assombrit vers la bordure (profondeur).
+- **Lune** : la photo est en portrait — dans un écran en paysage, la lune serait au-dessus du cadre. Les bandes
+  commencent sous elle (rangée 0,27 de la photo : jamais deux lunes, aucune retouche du ciel, sa lueur reste) ;
+  la lune et son halo, pris à la même photo, forment un calque posé sous l'en-tête, à la verticale de son reflet.
+- **Mise au point** : la baie est nette au premier plan ; dès que le mécanicien s'approche, elle passe au flou et
+  s'assombrit — le regard va au véhicule.
+- **Lisibilité** : un voile sombre sous l'en-tête transparent du haut de page (le ciel éclairé passait derrière
+  les liens).
+- Fichiers : `npm run assets:bay` (source `unnamed.jpg`, hors version) → `riviera-bay.webp` (203 Ko),
+  `riviera-bay-m.webp` (132 Ko), `riviera-moon.webp` (4 Ko) ; affiches du hero recapturées.
+
+### 2026-09-13 — Téléphone : la place, l'esplanade, le relais vers la zone (demande du porteur, mobile seulement)
+Sous 900 px uniquement ; l'ordinateur reste tel quel (capture du premier plan comparée : scène identique au pixel
+près, seul l'anticrénelage de quelques lettres de la marque, désormais découpée en deux, diffère).
+- **Premier plan** : la voiture recentrée et plus proche (caméra à 17 m au lieu de 22), garée dans une place
+  marquée — ligne de rive, séparations tous les 6 m, axe de la chaussée en tirets. Au-delà de la bordure, une
+  esplanade dallée (dalles de 1,2 × 0,6 m, joints tendus vers la baie) jusqu'à un garde-corps (muret de pierre,
+  main courante, lisse basse, barreaux tous les 12 cm, poteaux) et des lampadaires de 3,7 m (mât, crosse,
+  lanterne allumée et son halo) : la baie commence au garde-corps, la voiture ne semble plus partir dans le vide.
+  Ces éléments sont éclairés par la même nuit que le sol (lanternes, ciel, lueur de la baie), sans lumière de
+  scène. Lune plus haute, sous l'en-tête.
+- **Marque** : « MECA » au bleu clair de la charte (`--blue-soft`) — en-tête, entrée, sur-titre du hero, pied de page.
+- **Relais Méthode → Zone** : la montée finale s'arrête à un recul mesuré (voiture entière, de trois quarts, à une
+  dizaine de mètres) au lieu du point vu à 48 m ; la zone d'intervention monte ensuite par-dessus la vue encore
+  épinglée, couchée (−34°, réduite à 90 %) puis redressée, la scène s'éteignant dessous. Le temps d'arrêt final
+  passe à un écran ; le pas guidé suivant se pose sur la zone.
+- **Définition** : rendu jusqu'à 2 fois la densité de l'écran (1,5 avant), baissé d'un cran si les images
+  ralentissent, dans les deux scènes ; filtrage anisotrope 16× (baie, relevé) et 8× (sol).

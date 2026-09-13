@@ -311,6 +311,17 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
     height: 60svh;
   }
 
+  /* Relais vers la zone d'intervention : la scène s'éteint sous la feuille qui monte (Territory.astro). */
+  .method__viewport::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    background: var(--ink);
+    opacity: calc(var(--handoff, 0) * 0.85);
+    pointer-events: none;
+  }
+
   .insp__closing {
     font-stretch: var(--wide);
     font-weight: 800;
@@ -360,11 +371,11 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
       min-height: 80svh;
     }
 
-    /* Le temps d'arrêt final est déjà un pas : la vue reste épinglée le temps de la dernière phrase, et la
-       carte n'est qu'à un geste. */
+    /* Après le dernier pas, un écran : la zone d'intervention y monte par-dessus la vue encore épinglée
+       (Territory.astro) — un geste. */
     .method:global(.has-captions) .insp__tail {
-      height: 16vh;
-      height: 16svh;
+      height: 100vh;
+      height: 100svh;
     }
 
     /* La dernière feuille (repli) avait une hauteur minimale : l'annuler sans rien d'autre (un sélecteur plus
