@@ -267,3 +267,31 @@ Sous 900 px uniquement ; l'ordinateur reste tel quel (19 programmes GPU, scène 
   la zone relevés au redimensionnement ; propriétés du relais réécrites seulement si elles changent) ; la définition
   baisse d'un cran dès que les images passent sous ~45 i/s (au lieu de 24), jusqu'à 1 sur l'inspection. L'ombre
   calculée une fois et les flammes invisibles au repos ne coûtent rien.
+
+### 2026-09-13 — Retour au premier plan, phares xénon et feux arrière, mallette, banc, plaques, flammes UHQ
+Visuel sur téléphone seulement ; le retour au premier plan vaut pour tous les formats.
+- **Toujours le premier plan** : à chaque arrivée — rechargement, réouverture, retour par l'historique, lien vers une
+  section —, ni position de défilement restaurée ni ancre ; le haut est réimposé tant que le visiteur n'a pas bougé
+  (certains navigateurs restaurent tard), la page se remet en haut en partant, et une page restaurée depuis
+  l'historique est rechargée. L'entrée s'affiche donc à chaque fois, ordinateur compris (qui restaurait la position).
+  Téléphone : l'entrée dure 2,5 s au lieu de 5, barre comprise.
+- **Phares xénon et feux arrière** : dans l'allumage du lampadaire, les phares s'amorcent — éclair bleuté, creux,
+  montée, blanc froid. Les optiques du modèle deviennent émissives dans le volume des phares seulement (les pièces
+  lumineuses mêlent avant et arrière) ; éclat et traînée à chaque optique, faisceau dans l'air, faisceau de croisement
+  au sol. Les feux arrière s'allument avec eux, d'un rouge franc (vitres teintées compensées de leur opacité, halo,
+  reflet sur la chaussée). La voiture reste ainsi éclairée jusqu'au bout de la présentation, extinction finale
+  comprise ; seul le haut de page reste à la nuit.
+- **Mallette** : caisse à outils rouge (acier peint, couvercle, poignée et fermoirs chromés) au pied du bouclier avant,
+  une clé mixte posée devant ; elle porte son ombre avec le véhicule.
+- **Banc** : sur l'esplanade, à droite du cadre, face à la baie ; une silhouette assise de dos, capuche relevée,
+  penchée en avant — matières presque noires, découpée sur les lumières de la côte.
+- **Plaques** : « MECA RIVIERA » au format européen — bande de l'Europe (étoiles, F), à droite le signe de la marque
+  et 06. Posées sur les surfaces relevées par lancer de rayons sur chaque modèle (plan ajusté, inclinaison comprise) :
+  C63 devant la grille basse et dans son logement arrière, RS3 sur le support de calandre et sur la malle, M4 devant
+  les naseaux et sur le bouclier. La voiture de la Méthode, un relevé réel, ne montre pas de plaque.
+- **Flammes UHQ** : deux couches par sortie (enveloppe ; cœur plus étroit et plus court), couleur selon la
+  température — base bleutée au débouché, cœur jaune-blanc, corps orange, bords et pointe rougeâtres —, bruit
+  fractal ; étincelles ; puis la traînée — fumée et gaz chauds qui dérivent en arrière, montent et s'effilochent,
+  dissipés en 2 à 3 s — et les débouchés qui refroidissent de l'orangé au rouge sombre.
+- **Ordinateur** : le sol a désormais un programme par format (le code du téléphone ajouté au programme commun
+  modifiait légèrement le rendu de l'ordinateur à la compilation) ; rendu identique à l'œil, 19 programmes.

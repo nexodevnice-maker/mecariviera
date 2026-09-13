@@ -1,39 +1,49 @@
 ---
 /**
  * Entrée : « MECA RIVIERA — PRESENT » sur la nuit, le temps que la première scène soit réellement prête
- * (première image de la 3D rendue ; sans WebGL, l'affiche décodée). Ordinateur : ni pourcentage, ni barre ; elle
- * se lève dès que la scène est prête — jamais avant une seconde de lecture —, au plus tard après 5 s (l'affiche,
- * identique à la première image de la 3D, prend alors le relais et la 3D la remplace à son arrivée), et aussitôt à
- * la moindre interaction ; arrivée par un lien vers une section : aucune entrée. Téléphone : l'entrée à chaque
- * arrivée (rechargée, rouverte, revenue par l'historique : on repart du haut de la page), 5 s pleines, une fine
- * barre blanche qui se remplit, la page immobile pendant ce temps. L'arrivée des phares attend qu'elle se lève
- * (événement meca:enter). Sans script : aucune entrée.
+ * (première image de la 3D rendue ; sans WebGL, l'affiche décodée). À chaque arrivée — rechargement, réouverture,
+ * retour par l'historique, lien vers une section — on atterrit sur le premier plan et l'immersion recommence.
+ * Ordinateur : ni pourcentage, ni barre ; elle se lève dès que la scène est prête — jamais avant une seconde de
+ * lecture —, au plus tard après 5 s (l'affiche, identique à la première image de la 3D, prend alors le relais et la
+ * 3D la remplace à son arrivée), et aussitôt à la moindre interaction. Téléphone : 2,5 s pleines, une fine barre
+ * blanche qui se remplit, la page immobile pendant ce temps. L'arrivée des phares attend qu'elle se lève (événement
+ * meca:enter). Sans script : aucune entrée.
  */
 ---
 
 <script is:inline>
   (() => {
-    // Téléphone : l'entrée à chaque arrivée, même rechargée depuis une ancre ou une position de défilement
-    // mémorisée — on repart du haut de la page. Ordinateur : sans ancre seulement.
-    const phone = matchMedia('(max-width: 899px)').matches;
-    if (phone) {
-      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-      if (location.hash) history.replaceState(null, '', location.pathname + location.search);
-      scrollTo(0, 0);
-    }
-    if (phone || !location.hash) document.documentElement.classList.add('has-intro');
-    if (phone) {
-      document.documentElement.classList.add('intro-lock');
-      // Page restaurée telle quelle (retour par l'historique) : rechargée, l'entrée avec.
-      addEventListener('pageshow', (event) => event.persisted && location.reload());
-    }
+    // Toujours le premier plan à l'arrivée : aucune position de défilement restaurée, aucune ancre.
+    const root = document.documentElement;
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    // Tant que le visiteur n'a pas bougé, le haut est réimposé (certains navigateurs restaurent tard, au chargement
+    // complet) ; en partant, la page se remet en haut : aucun navigateur n'a d'autre position à restaurer.
+    let moved = false;
+    for (const type of ['wheel', 'touchstart', 'keydown', 'pointerdown'])
+      addEventListener(type, () => (moved = true), { capture: true, once: true, passive: true });
+    const top = () => {
+      if (!moved) scrollTo(0, 0);
+    };
+    top();
+    addEventListener('DOMContentLoaded', top, { once: true });
+    addEventListener('load', () => {
+      top();
+      requestAnimationFrame(top);
+    });
+    addEventListener('pagehide', () => scrollTo(0, 0));
+    // Page restaurée telle quelle (retour par l'historique) : rechargée, l'entrée avec.
+    addEventListener('pageshow', (event) => event.persisted && location.reload());
+    root.classList.add('has-intro');
+    // Téléphone : la page immobile pendant l'entrée.
+    if (matchMedia('(max-width: 899px)').matches) root.classList.add('intro-lock');
   })();
 </script>
 <div class="intro" data-intro aria-hidden="true" data-nosnippet>
   <p class="intro__card">
     <span class="intro__brand"><span class="meca">MECA</span> RIVIERA</span>
     <span class="intro__present">PRESENT</span>
-    <!-- Téléphone : une fine barre blanche se remplit pendant les 5 s de l'entrée. -->
+    <!-- Téléphone : une fine barre blanche se remplit pendant les 2,5 s de l'entrée. -->
     <span class="intro__bar"><span></span></span>
   </p>
 </div>
@@ -43,10 +53,10 @@
     const intro = document.querySelector('[data-intro]');
     if (!intro) return;
     if (!root.classList.contains('has-intro')) return intro.remove();
-    // Téléphone : l'entrée dure ses 5 s (la barre), sans être écourtée par un geste.
+    // Téléphone : l'entrée dure ses 2,5 s (la barre), sans être écourtée par un geste.
     const phone = matchMedia('(max-width: 899px)').matches;
-    const MIN = phone ? 5000 : 1300; // lecture du titre, même quand tout est déjà en cache
-    const MAX = 5000; // au-delà, l'affiche prend le relais : la page n'attend pas une ressource lente
+    const MIN = phone ? 2500 : 1300; // lecture du titre, même quand tout est déjà en cache
+    const MAX = phone ? 2500 : 5000; // au-delà, l'affiche prend le relais : la page n'attend pas une ressource lente
     const start = performance.now();
     let leaving = false;
     const leave = (instant) => {
@@ -153,7 +163,7 @@
     transition-delay: 0.45s;
   }
 
-  /* Téléphone : la barre de chargement (5 s, linéaire) ; la page ne défile pas pendant l'entrée. */
+  /* Téléphone : la barre de chargement (2,5 s, linéaire) ; la page ne défile pas pendant l'entrée. */
   .intro__bar {
     display: none;
   }
@@ -183,7 +193,7 @@
       background: #fff;
       transform: scaleX(0);
       transform-origin: 0 50%;
-      animation: intro-load 5s linear forwards;
+      animation: intro-load 2.5s linear forwards;
     }
   }
 

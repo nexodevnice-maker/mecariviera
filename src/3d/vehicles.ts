@@ -8,6 +8,22 @@ export interface Exhaust {
   size: [number, number];
 }
 
+/**
+ * Téléphone, phares avant ou feux arrière — optique droite (la gauche en miroir) : centre et demi-dimensions de sa zone
+ * lumineuse, face extérieure (z) où se pose l'éclat.
+ */
+export interface Lamps {
+  center: Vec3;
+  half: Vec3;
+  face: number;
+}
+
+/** Téléphone : une plaque, posée sur la caisse (centre) et inclinée comme elle (pente dz/dy). */
+export interface Plate {
+  at: Vec3;
+  slope: number;
+}
+
 export interface Vehicle {
   id: VehicleId;
   /** Silhouette, jamais la marque : aucune affiliation constructeur suggérée. */
@@ -17,6 +33,14 @@ export interface Vehicle {
   anchors?: Partial<Record<StopKey, Vec3>>;
   /** Sorties d'échappement, relevées sur les modèles -m (géométrie des embouts). */
   exhaust: Exhaust;
+  /**
+   * Phares, plaques (surfaces de pose relevées par lancer de rayons sur les modèles -m) et pied du bouclier avant
+   * (z, à 18 cm du sol).
+   */
+  lamps: Lamps;
+  tail: Lamps;
+  plates: { front: Plate; rear: Plate };
+  bumper: number;
 }
 
 export const VEHICLES: Vehicle[] = [
@@ -29,6 +53,11 @@ export const VEHICLES: Vehicle[] = [
       tips: [[-0.59, 0.343, -2.31], [-0.455, 0.348, -2.337], [0.455, 0.348, -2.337], [0.59, 0.343, -2.31]],
       size: [0.13, 0.065],
     },
+    lamps: { center: [0.62, 0.66, 2.15], half: [0.22, 0.13, 0.25], face: 2.1 },
+    tail: { center: [0.6, 0.74, -2.09], half: [0.23, 0.17, 0.22], face: -2.2 },
+    // Avant : devant la grille basse, sur son support ; arrière : dans son logement, sous la malle.
+    plates: { front: { at: [0, 0.39, 2.362], slope: 0 }, rear: { at: [0, 0.52, -2.346], slope: 0.27 } },
+    bumper: 2.343,
   },
   {
     id: 'rs3',
@@ -40,6 +69,11 @@ export const VEHICLES: Vehicle[] = [
       tips: [[-0.53, 0.332, -2.236], [-0.46, 0.332, -2.236], [0.46, 0.332, -2.236], [0.53, 0.332, -2.236]],
       size: [0.065, 0.07],
     },
+    lamps: { center: [0.59, 0.64, 1.98], half: [0.23, 0.1, 0.18], face: 1.95 },
+    tail: { center: [0.53, 0.72, -1.98], half: [0.25, 0.19, 0.21], face: -2.07 },
+    // Avant : sur le support de la calandre ; arrière : sur la malle, entre les feux.
+    plates: { front: { at: [0, 0.44, 2.262], slope: -0.04 }, rear: { at: [0, 0.79, -2.118], slope: 0.28 } },
+    bumper: 2.23,
   },
   {
     id: 'm4',
@@ -51,6 +85,11 @@ export const VEHICLES: Vehicle[] = [
       tips: [[-0.387, 0.29, -2.357], [-0.272, 0.292, -2.366], [0.272, 0.292, -2.366], [0.387, 0.29, -2.357]],
       size: [0.085, 0.085],
     },
+    lamps: { center: [0.62, 0.64, 2.11], half: [0.23, 0.08, 0.18], face: 2.13 },
+    tail: { center: [0.57, 0.69, -2.085], half: [0.26, 0.22, 0.19], face: -2.24 },
+    // Avant : devant le bas des naseaux, sur son support ; arrière : sur le bouclier.
+    plates: { front: { at: [0, 0.36, 2.382], slope: 0 }, rear: { at: [0, 0.48, -2.382], slope: 0.03 } },
+    bumper: 2.334,
   },
 ];
 
