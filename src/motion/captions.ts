@@ -42,6 +42,12 @@ export function mountCaptions(
   let active = -1;
   let visible = false;
   let frame = 0;
+  // Bas de la section dans la page, relevé avec les arrêts (progress.measure) : aucune lecture de mise en page
+  // pendant le défilement.
+  let bottom = Infinity;
+  progress.onMeasure(() => {
+    bottom = root.getBoundingClientRect().bottom + window.scrollY;
+  });
   const show = (next: number) => {
     if (next === active) return;
     panels[active]?.classList.remove('is-active');
@@ -51,7 +57,7 @@ export function mountCaptions(
   const update = () => {
     frame = 0;
     // Hors écran, ou section qui s'en va (la suivante monte dessous) : aucune légende ne reste posée.
-    if (!narrow.matches || !visible || root.getBoundingClientRect().bottom < innerHeight - 1) return show(-1);
+    if (!narrow.matches || !visible || bottom - window.scrollY < innerHeight - 1) return show(-1);
     const p = progress.shown();
     show(windows.findIndex(([a, b], k) => panels[k] !== null && p >= a && p <= b));
   };

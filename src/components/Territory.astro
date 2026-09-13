@@ -368,23 +368,41 @@ const pins = towns.map((t) => {
   const phone = matchMedia('(max-width: 899px)');
   if (zoneSection && method) {
     let frame = 0;
+    // Haut de la zone dans la page, relevé à la mise en page seulement ; les propriétés ne sont réécrites que si
+    // elles changent : le défilement ne coûte ni mesure ni recalcul de style.
+    let top = 0;
+    let stale = true;
+    let last = '';
     const update = () => {
       frame = 0;
       zoneSection.classList.toggle('is-handoff', phone.matches);
       if (!phone.matches) {
         method.style.removeProperty('--handoff');
+        stale = true;
+        last = '';
         return;
       }
-      const enter = Math.min(Math.max(1 - zoneSection.getBoundingClientRect().top / window.innerHeight, 0), 1);
-      zoneSection.style.setProperty('--enter', enter.toFixed(3));
-      method.style.setProperty('--handoff', enter.toFixed(3));
+      if (stale) {
+        top = zoneSection.getBoundingClientRect().top + window.scrollY;
+        stale = false;
+      }
+      const enter = Math.min(Math.max(1 - (top - window.scrollY) / window.innerHeight, 0), 1).toFixed(3);
+      if (enter === last) return;
+      last = enter;
+      zoneSection.style.setProperty('--enter', enter);
+      method.style.setProperty('--handoff', enter);
     };
     const schedule = () => {
       frame ||= requestAnimationFrame(update);
     };
+    const remeasure = () => {
+      stale = true;
+      schedule();
+    };
     addEventListener('scroll', schedule, { passive: true });
-    addEventListener('resize', schedule);
-    phone.addEventListener('change', schedule);
+    addEventListener('resize', remeasure);
+    phone.addEventListener('change', remeasure);
+    new ResizeObserver(remeasure).observe(document.body);
     update();
   }
 </script>
