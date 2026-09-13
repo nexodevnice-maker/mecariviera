@@ -19,10 +19,12 @@ import { guided } from '../motion/guide';
 import type { StageProgress } from '../motion/stage-progress';
 import { INSPECTION_PACES } from './inspection-paces';
 import { guidedPace, paced, type Pace, type Vec3 } from './rigs';
+import { plateTexture } from './stage';
 
 /**
  * Inspection 3D du scan réel (photogrammétrie d'une A1 capot ouvert), pilotée par le scroll.
- * La voiture reste sombre et désaturée (ce qui masque les défauts du scan) ; une ligne de scan la
+ * Ordinateur : la voiture reste sombre et désaturée (ce qui masque les défauts du scan). Téléphone : ses couleurs
+ * réelles, de nuit, sous une lanterne (normales du scan lissées), et une plaque MECA RIVIERA à l'avant. Une ligne de scan la
  * parcourt de l'arrière vers l'avant, puis une « lampe d'inspection » éclaire en couleurs réelles
  * la pièce désignée par chaque arrêt. Repère du scan : véhicule tourné de -25,5° autour de la
  * verticale (avant vers +X/-Z), centre au sol en (0,055 ; -0,359) — mesuré sur les roues et la
@@ -179,13 +181,20 @@ const SHOTS: Record<Key, Shot> = {
   },
 };
 
+// PHONE : programme du format (1 sur téléphone, resize) — celui de l'ordinateur n'en contient rien.
 const vertexShader = /* glsl */ `
 varying vec2 vUv;
 varying vec3 vWorld;
+#if PHONE
+varying vec3 vNormal;
+#endif
 void main() {
   vUv = uv;
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorld = world.xyz;
+  #if PHONE
+  vNormal = normalize(mat3(modelMatrix) * normal);
+  #endif
   gl_Position = projectionMatrix * viewMatrix * world;
 }`;
 
@@ -204,6 +213,9 @@ uniform float uCutout; // téléphone : la voiture seule, détourée
 uniform float uAccent; // téléphone : la pièce nommée au bleu de la marque
 varying vec2 vUv;
 varying vec3 vWorld;
+#if PHONE
+varying vec3 vNormal;
+#endif
 
 // Repère du véhicule dans le scan : centre au sol (x, z), axe avant, axe latéral ; demi-emprise (m).
 const vec2 CAR_CENTER = vec2(0.055, -0.359);
@@ -239,10 +251,26 @@ void main() {
   vec2 edge = abs(car.xz) - BODY_HALF + 0.3;
   float beyond = length(max(edge, 0.0)) + min(max(edge.x, edge.y), 0.0) - 0.3;
   if (uCutout > 0.5 && (above < 0.035 || (beyond > 0.02 && above < 0.5) || beyond > 0.16)) discard;
-  // Nuit : luminance seule, froide et basse ; un cran plus clair derrière la ligne de scan (relevé).
+  // Nuit : un cran plus clair derrière la ligne de scan (relevé).
   float dx = car.x - uSweep;
   float scanned = uSweepMix * (1.0 - smoothstep(-0.3, 0.02, dx));
-  // À l'ouverture (uReveal = 0), la voiture n'existe que là où la ligne de scan est passée.
+  #if PHONE
+  // Téléphone : la voiture dans ses couleurs, de nuit — teintes réelles un peu désaturées, sous une lanterne chaude
+  // (de trois quarts avant, en hauteur) et le ciel froid par le dessus ; normales lissées du scan, reflet discret sur
+  // la carrosserie, liseré froid sur la silhouette. À l'ouverture (uReveal = 0), elle n'existe que là où la ligne de
+  // scan est passée.
+  vec3 toEye = normalize(cameraPosition - vWorld);
+  vec3 n = normalize(vNormal);
+  n *= sign(dot(n, toEye));
+  vec3 key = normalize(vec3(0.55, 0.75, -0.35));
+  vec3 real = mix(vec3(lum), tex, 0.7);
+  vec3 color = real * (vec3(1.0, 0.92, 0.82) * 0.5 * (0.3 + 0.7 * max(dot(n, key), 0.0)) + vec3(0.55, 0.62, 0.82) * 0.2 * (0.5 + 0.5 * n.y));
+  color += vec3(1.0, 0.95, 0.88) * 0.06 * pow(max(dot(reflect(-key, n), toEye), 0.0), 20.0);
+  color *= mix(uReveal, 1.3, scanned);
+  color += uLine * 0.06 * pow(1.0 - max(dot(n, toEye), 0.0), 3.0) * max(uReveal, scanned);
+  #else
+  // Ordinateur : luminance seule, froide et basse. À l'ouverture (uReveal = 0), la voiture n'existe que là où la
+  // ligne de scan est passée.
   vec3 color = lum * mix(vec3(0.2, 0.215, 0.26) * uReveal, vec3(0.3, 0.32, 0.39), scanned);
   // Volume : normale de facette (dérivées écran), tournée vers l'observateur — la silhouette
   // accroche un liseré froid, les dessus un peu de lumière zénithale.
@@ -250,6 +278,7 @@ void main() {
   vec3 toEye = normalize(cameraPosition - vWorld);
   facet *= sign(dot(facet, toEye));
   color += (uLine * 0.05 * pow(1.0 - max(dot(facet, toEye), 0.0), 4.0) + vec3(0.009, 0.01, 0.014) * max(facet.y, 0.0)) * max(uReveal, scanned);
+  #endif
   // Lampe d'inspection : couleurs réelles dans un ellipsoïde aligné sur le véhicule, cœur légèrement
   // chaud, et une lumière diffuse autour — une flaque de lumière plutôt qu'une découpe.
   float d = length((car - toCar(uFocus)) / uRadii);
@@ -344,6 +373,46 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
+// Téléphone : la plaque avant (le scan n'en porte plus) — elle naît avec la voiture derrière la ligne de relevé, dans
+// la même nuit, et s'efface avec elle quand une pièce est isolée.
+const plateVertex = /* glsl */ `
+varying vec2 vUv;
+varying vec3 vWorld;
+void main() {
+  vUv = uv;
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  vWorld = world.xyz;
+  gl_Position = projectionMatrix * viewMatrix * world;
+}`;
+
+const plateFragment = /* glsl */ `
+uniform sampler2D map;
+uniform vec3 uFocus;
+uniform vec3 uRadii;
+uniform float uSweep;
+uniform float uSweepMix;
+uniform float uReveal;
+uniform float uIsolate;
+uniform vec3 uInk;
+varying vec2 vUv;
+varying vec3 vWorld;
+const vec2 CAR_CENTER = vec2(0.055, -0.359);
+const vec2 CAR_FORWARD = vec2(0.9026, -0.4305);
+const vec2 CAR_SIDE = vec2(0.4305, 0.9026);
+vec3 toCar(vec3 p) {
+  vec2 rel = p.xz - CAR_CENTER;
+  return vec3(dot(rel, CAR_FORWARD), p.y, dot(rel, CAR_SIDE));
+}
+void main() {
+  vec3 car = toCar(vWorld);
+  float scanned = uSweepMix * (1.0 - smoothstep(-0.3, 0.02, car.x - uSweep));
+  vec3 color = texture2D(map, vUv).rgb * 0.45 * mix(uReveal, 1.3, scanned);
+  float spill = 1.0 - smoothstep(0.9, 1.7, length((car - toCar(uFocus)) / uRadii));
+  color *= mix(1.0, 0.3, uIsolate * (1.0 - spill));
+  gl_FragColor = vec4(mix(uInk, color, clamp(max(uReveal, scanned), 0.0, 1.0)), 1.0);
+  #include <colorspace_fragment>
+}`;
+
 interface InspectionOptions {
   root: HTMLElement;
   canvas: HTMLCanvasElement;
@@ -386,12 +455,23 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     .setMeshoptDecoder(MeshoptDecoder)
     .loadAsync(narrow.matches ? '/3d/a1-scan-m.glb' : '/3d/a1-scan.glb');
   const anisotropy = Math.min(narrow.matches ? 16 : 8, renderer.capabilities.getMaxAnisotropy());
+  // Un programme par format (PHONE, resize) : le téléphone a ses couleurs de nuit, l'ordinateur garde le sien.
+  const scanMaterials: ShaderMaterial[] = [];
   gltf.scene.traverse((node) => {
     const mesh = node as Mesh;
     if (!mesh.isMesh) return;
     const source = mesh.material as MeshBasicMaterial;
     if (source.map) source.map.anisotropy = anisotropy;
-    mesh.material = new ShaderMaterial({ uniforms: { ...uniforms, map: { value: source.map } }, vertexShader, fragmentShader });
+    // Le scan n'a pas de normales : lissées ici, pour un modelé continu (téléphone).
+    mesh.geometry.computeVertexNormals();
+    const material = new ShaderMaterial({
+      defines: { PHONE: 0 },
+      uniforms: { ...uniforms, map: { value: source.map } },
+      vertexShader,
+      fragmentShader,
+    });
+    scanMaterials.push(material);
+    mesh.material = material;
     source.dispose();
   });
   scene.add(gltf.scene);
@@ -402,6 +482,18 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0.055, 0, -0.359);
+  // Téléphone : la plaque avant, sur son support — face à l'avant du véhicule, 43 cm au-dessus du sol du relevé
+  // (relevé sur le scan : la bande saillante de la plaque d'origine).
+  const plate = new Mesh(
+    new PlaneGeometry(0.5, 0.106),
+    new ShaderMaterial({
+      uniforms: { ...uniforms, map: { value: plateTexture(getComputedStyle(document.body).fontFamily, anisotropy) } },
+      vertexShader: plateVertex,
+      fragmentShader: plateFragment,
+    }),
+  );
+  plate.position.set(1.823, 0.56, -1.224);
+  plate.rotation.y = 2.016;
 
   // — Caméra et éclairage : interpolés d'arrêt en arrêt, avec un palier pendant la lecture.
   const keys = stops.map((el) => el.dataset.stop as Key);
@@ -523,8 +615,14 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     // Téléphone : la voiture détourée sur sa place de parking, les pièces nommées au bleu de la marque.
     uniforms.uCutout.value = narrow.matches ? 1 : 0;
     uniforms.uAccent.value = narrow.matches ? 1 : 0;
-    if (narrow.matches) scene.add(ground);
-    else scene.remove(ground);
+    if (narrow.matches) scene.add(ground, plate);
+    else scene.remove(ground, plate);
+    for (const material of scanMaterials) {
+      if (material.defines.PHONE !== Number(narrow.matches)) {
+        material.defines.PHONE = Number(narrow.matches);
+        material.needsUpdate = true;
+      }
+    }
     renderer.setPixelRatio(pixelRatio());
     renderer.setSize(viewport.clientWidth, viewport.clientHeight, false);
     const aspect = viewport.clientWidth / viewport.clientHeight;

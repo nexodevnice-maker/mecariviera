@@ -45,7 +45,6 @@ import {
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
-  TorusGeometry,
   Vector2,
   Vector3,
   Vector4,
@@ -55,7 +54,6 @@ import {
   type Object3D,
   type Texture,
 } from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
@@ -63,6 +61,7 @@ import { createFollow } from '../motion/follow';
 import { guided } from '../motion/guide';
 import type { StageProgress } from '../motion/stage-progress';
 import { BANDS, createBay, FIT_TALL, FIT_WIDE, type BayFit } from './bay';
+import { mergeByMaterial, toolCase } from './props';
 import { guidedPace, paced, RIGS, type Framing, type Shot, type StopKey } from './rigs';
 import { STUDIO_ENV_SIGMA, STUDIO_PANELS } from './studio';
 import { vehicleById, type Exhaust, type Lamps, type Plate, type VehicleId } from './vehicles';
@@ -285,10 +284,13 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   // Les phares xénon et les feux arrière, qui s'allument avec le lampadaire (optiques du modèle modifiées sur
   // téléphone seulement : l'ordinateur garde ses programmes).
   const lamps = headlamps(car, spec.lamps, spec.tail, narrow.matches);
-  // Au pied du bouclier avant, la caisse à outils du mécanicien ; sur l'esplanade, un banc et sa silhouette.
-  const kit = toolbox();
-  kit.position.set(0.42, 0, spec.bumper + 0.3);
-  kit.rotation.y = -0.35;
+  // Devant le véhicule, la mallette du mécanicien, grande ouverte face à la caméra — décollée de lui (1,25 m devant le
+  // bouclier, côté chaussée) : phares, plaque et calandre restent dégagés, et elle tient dans le cadre du premier plan
+  // comme de la face avant ; sur l'esplanade, un banc et sa silhouette.
+  const toolkit = toolCase();
+  const kit = toolkit.group;
+  kit.position.set(0.8, 0, spec.bumper + 1.25);
+  kit.rotation.y = 0.45;
   kit.updateMatrixWorld(true);
   const bench = benchSitter();
   bench.position.set(EDGE + 0.95, 0, BENCH_Z);
@@ -370,6 +372,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     lamps.set(head, headColor.setRGB(0.84 - 0.22 * strike, 0.92 - 0.2 * strike, 1.06 + 0.3 * strike), rear);
     roadUniforms.uHead.value = head;
     roadUniforms.uTail.value = rear;
+    // Les outils de la mallette : acier sombre dans la nuit, chromes brillants sous la lanterne et les phares.
+    toolkit.setLight(rise);
     corniche.setLevel(level * out);
     scene.environmentIntensity = 0.2 + 0.8 * rise;
     scene.environmentRotation.y = -0.9 * (1 - Math.min(t / 1.4, 1) * on) ** 3;
@@ -1557,9 +1561,19 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
             float inLamp = 1.0 - smoothstep(-0.01, 0.02, max(max(lampBox.x, lampBox.y), lampBox.z));
             vec3 tailBox = abs(vec3(abs(vLampWorld.x), vLampWorld.yz) - vec3(${v(tx)}, ${v(ty)}, ${v(tz)})) - vec3(${v(sx)}, ${v(sy)}, ${v(sz)});
             float inTail = 1.0 - smoothstep(-0.01, 0.02, max(max(tailBox.x, tailBox.y), tailBox.z));
-            // Vitres teintées (transparentes) : leur émission compensée de leur opacité.
-            float lit = (0.3 + 0.7 * dot(diffuseColor.rgb, vec3(0.3333))) / max(diffuseColor.a, 0.25);
-            totalEmissiveRadiance += (uHeadColor * uHead * inLamp + vec3(1.0, 0.035, 0.02) * uTail * inTail) * lit;`,
+            // Phares : seules les parties claires des optiques (lentilles, réflecteurs, signature lumineuse) s'allument
+            // franchement, le boîtier reste sombre. Feux arrière : un rouge vif, dosé sous la compression des hautes
+            // lumières (qui le ferait virer au rose). Vitres teintées : émission compensée de leur opacité.
+            float lum = dot(diffuseColor.rgb, vec3(0.3333));
+            float glass = 1.0 / max(diffuseColor.a, 0.25);
+            float optic = smoothstep(0.3, 0.85, lum);
+            totalEmissiveRadiance += uHeadColor * uHead * inLamp * (0.06 + 1.2 * optic * optic) * glass;
+            totalEmissiveRadiance += vec3(1.0, 0.02, 0.01) * uTail * inTail * (0.4 + 0.8 * smoothstep(0.1, 0.6, lum)) * glass;`,
+          )
+          // Feux arrière allumés : leurs reflets (ciel, lanterne) teintés de rouge, comme sous un verre rouge éclairé.
+          .replace(
+            '#include <opaque_fragment>',
+            'outgoingLight = mix(outgoingLight, outgoingLight * vec3(1.0, 0.18, 0.12), inTail * min(uTail, 1.0) * 0.85);\n#include <opaque_fragment>',
           );
       };
     });
@@ -1606,7 +1620,7 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
   // Feux arrière : un halo rouge sur chaque optique.
   const red = new SpriteMaterial({
     map: glowTexture(),
-    color: 0xff2a1a,
+    color: 0xff140a,
     blending: AdditiveBlending,
     depthWrite: false,
     transparent: true,
@@ -1621,14 +1635,14 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
   /** Phares (0 : éteints ; l'amorçage dépasse 1) et leur teinte ; feux arrière (0 à 1). */
   const set = (level: number, color: Color, rear: number) => {
     uHead.value = level * 3;
-    uTail.value = rear * 2.2;
+    uTail.value = rear * 1.2;
     uHeadColor.value.copy(color);
     glow.color.copy(color);
     streak.color.copy(color).multiplyScalar(0.8);
     glow.opacity = Math.min(level, 1);
-    streak.opacity = Math.min(level, 1) * 0.5;
-    red.opacity = rear * 0.7;
-    for (const flare of flares) flare.scale.setScalar(0.75 + 0.3 * Math.min(level, 1.7));
+    streak.opacity = Math.min(level, 1) * 0.35;
+    red.opacity = rear * 0.55;
+    for (const flare of flares) flare.scale.setScalar(0.55 + 0.25 * Math.min(level, 1.7));
     group.visible = level > 0.002 || rear > 0.002;
   };
   return { group, set };
@@ -1638,7 +1652,7 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
  * Plaque d'immatriculation au format européen (520 × 110 mm) : « MECA RIVIERA » en noir sur blanc ; à gauche la bande
  * de l'Europe (étoiles, F), à droite le signe de la marque (Mark.astro) et le département, 06.
  */
-function plateTexture(family: string, anisotropy: number) {
+export function plateTexture(family: string, anisotropy: number) {
   const W = 1040;
   const H = 220;
   const canvas = document.createElement('canvas');
@@ -1735,44 +1749,6 @@ function licensePlates(plates: { front: Plate; rear: Plate }, map: Texture) {
 }
 
 /**
- * Téléphone : la caisse à outils du mécanicien, au pied du bouclier — acier peint rouge, couvercle et charnière,
- * poignée et fermoirs chromés ; une clé mixte posée devant. Éclairée par la scène (lanterne, lampadaire, ciel).
- */
-function toolbox() {
-  const group = new Group();
-  const paint = new MeshStandardMaterial({ color: 0x9a1712, metalness: 0.35, roughness: 0.4 });
-  const chrome = new MeshStandardMaterial({ color: 0xdfe2e6, metalness: 1, roughness: 0.22 });
-  const seam = new MeshStandardMaterial({ color: 0x121214, metalness: 0.2, roughness: 0.6 });
-  const add = (mesh: Mesh, x: number, y: number, z: number) => {
-    mesh.position.set(x, y, z);
-    group.add(mesh);
-    return mesh;
-  };
-  add(new Mesh(new RoundedBoxGeometry(0.52, 0.17, 0.22, 3, 0.012), paint), 0, 0.085, 0);
-  add(new Mesh(new RoundedBoxGeometry(0.53, 0.055, 0.23, 3, 0.016), paint), 0, 0.2, 0);
-  add(new Mesh(new BoxGeometry(0.524, 0.006, 0.224), seam), 0, 0.171, 0);
-  add(new Mesh(new CylinderGeometry(0.011, 0.011, 0.3, 14), chrome), 0, 0.272, 0).rotation.z = Math.PI / 2;
-  for (const x of [-0.14, 0.14]) {
-    add(new Mesh(new BoxGeometry(0.02, 0.05, 0.02), chrome), x, 0.25, 0);
-    add(new Mesh(new BoxGeometry(0.036, 0.05, 0.012), chrome), x * 1.25, 0.168, 0.116);
-  }
-  // Clé mixte : manche plat, œil et fourche en anneaux.
-  const wrench = new Group();
-  const ring = new TorusGeometry(0.016, 0.0055, 8, 20);
-  for (const x of [-0.11, 0.11]) {
-    const eye = new Mesh(ring, chrome);
-    eye.rotation.x = Math.PI / 2;
-    eye.position.x = x;
-    wrench.add(eye);
-  }
-  wrench.add(new Mesh(new BoxGeometry(0.2, 0.006, 0.02), chrome));
-  wrench.position.set(0.1, 0.006, 0.26);
-  wrench.rotation.y = 0.5;
-  group.add(wrench);
-  return group;
-}
-
-/**
  * Téléphone : un banc de promenade face à la baie et, dessus, une silhouette de dos, dans l'ombre — capuche relevée,
  * penchée en avant, les avant-bras sur les cuisses. Matières presque noires : elle se découpe sur les lumières de la
  * côte. Repère local : le banc regarde vers -x (la mer).
@@ -1842,7 +1818,7 @@ function benchSitter() {
   }
   person.position.z = 0.35;
   group.add(person);
-  return group;
+  return mergeByMaterial(group);
 }
 
 /**

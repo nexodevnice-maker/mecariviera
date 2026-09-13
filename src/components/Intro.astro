@@ -17,20 +17,39 @@
     const root = document.documentElement;
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
-    // Tant que le visiteur n'a pas bougé, le haut est réimposé (certains navigateurs restaurent tard, au chargement
-    // complet) ; en partant, la page se remet en haut : aucun navigateur n'a d'autre position à restaurer.
-    let moved = false;
-    for (const type of ['wheel', 'touchstart', 'keydown', 'pointerdown'])
-      addEventListener(type, () => (moved = true), { capture: true, once: true, passive: true });
-    const top = () => {
-      if (!moved) scrollTo(0, 0);
+    // Le haut est tenu à chaque image pendant l'entrée, puis 1,5 s après elle et après le chargement complet : Safari
+    // et les navigateurs intégrés aux applications rétablissent parfois la position tard. Le premier geste du
+    // visiteur, une fois l'entrée levée, lui rend la main (au plus tard 12 s après l'arrivée) ; en partant, la page se
+    // remet en haut : aucun navigateur n'a d'autre position à restaurer.
+    let free = false;
+    let entered = false;
+    let until = 12000;
+    const hold = (now) => {
+      if (free || now > until) return;
+      if (scrollX || scrollY) scrollTo(0, 0);
+      requestAnimationFrame(hold);
     };
-    top();
-    addEventListener('DOMContentLoaded', top, { once: true });
-    addEventListener('load', () => {
-      top();
-      requestAnimationFrame(top);
-    });
+    scrollTo(0, 0);
+    requestAnimationFrame(hold);
+    const arm = () => {
+      if (entered && document.readyState === 'complete') until = performance.now() + 1500;
+    };
+    addEventListener(
+      'meca:enter',
+      () => {
+        entered = true;
+        scrollTo(0, 0);
+        arm();
+      },
+      { once: true },
+    );
+    addEventListener('load', arm, { once: true });
+    const release = () => {
+      if (entered && !root.classList.contains('intro-lock')) free = true;
+    };
+    for (const type of ['wheel', 'touchstart', 'keydown', 'pointerdown']) addEventListener(type, release, { capture: true, passive: true });
+    // Contrôle QA (captures) : la main tout de suite.
+    addEventListener('meca:intro-finish', () => (free = true), { once: true });
     addEventListener('pagehide', () => scrollTo(0, 0));
     // Page restaurée telle quelle (retour par l'historique) : rechargée, l'entrée avec.
     addEventListener('pageshow', (event) => event.persisted && location.reload());

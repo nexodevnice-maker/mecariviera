@@ -87,8 +87,9 @@ export const VEHICLES: Vehicle[] = [
     },
     lamps: { center: [0.62, 0.64, 2.11], half: [0.23, 0.08, 0.18], face: 2.13 },
     tail: { center: [0.57, 0.69, -2.085], half: [0.26, 0.22, 0.19], face: -2.24 },
-    // Avant : devant le bas des naseaux, sur son support ; arrière : sur le bouclier.
-    plates: { front: { at: [0, 0.36, 2.382], slope: 0 }, rear: { at: [0, 0.48, -2.382], slope: 0.03 } },
+    // Avant : devant le bas des naseaux, sur son support ; arrière : sur la face de la malle, juste sous le logo
+    // (inclinée comme elle).
+    plates: { front: { at: [0, 0.36, 2.382], slope: 0 }, rear: { at: [0, 0.785, -2.248], slope: 0.27 } },
     bumper: 2.334,
   },
 ];

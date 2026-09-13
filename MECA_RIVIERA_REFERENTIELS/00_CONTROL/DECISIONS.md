@@ -295,3 +295,31 @@ Visuel sur téléphone seulement ; le retour au premier plan vaut pour tous les 
   dissipés en 2 à 3 s — et les débouchés qui refroidissent de l'orangé au rouge sombre.
 - **Ordinateur** : le sol a désormais un programme par format (le code du téléphone ajouté au programme commun
   modifiait légèrement le rendu de l'ordinateur à la compilation) ; rendu identique à l'œil, 19 programmes.
+
+### 2026-09-13 — Premier plan tenu, mallette ouverte, feux rouge vif, phares réalistes, plaque M4, voiture de la Méthode
+Visuel sur téléphone seulement ; le premier plan tenu vaut pour tous les formats.
+- **Premier plan tenu** : introuvable dans le moteur de Chrome (16 rechargements, téléphone lent simulé, doigt posé :
+  toujours en haut, points de pas à leur place), le décalage vient d'un navigateur qui rétablit la position tard
+  (Safari, navigateurs intégrés aux applications). Le haut est désormais tenu à chaque image pendant l'entrée, puis
+  1,5 s après elle et après le chargement complet ; le premier geste du visiteur, l'entrée levée, lui rend la main (au
+  plus tard 12 s après l'arrivée). Vérifié avec des restaurations tardives simulées, de 0,3 à 3,6 s après le
+  rechargement.
+- **Mallette** (refaite entièrement à la demande du porteur) : une vraie mallette de mécanicien, grande ouverte
+  (72 × 42 cm) — coque rouge arrondie, calage noir, poignée et fermoirs ; dans le fond, trois rangées de douilles
+  chromées (empreinte hexagonale), deux cliquets et des rallonges ; dans le couvercle relevé à 100°, l'éventail de douze
+  clés mixtes et une rangée de tournevis. Au sol à côté, trois outils seulement : un cliquet, une clé mixte, un
+  tournevis. Décollée du véhicule (1,25 m devant le bouclier, côté chaussée), dans le cadre du premier plan comme de la
+  face avant ; fusionnée en une pièce par matière (le banc aussi), src/3d/props.ts.
+- **Feux arrière rouge vif** : émission rouge dosée sous la compression des hautes lumières (plus forte, elle virait
+  au rose), reflets des feux teintés de rouge.
+- **Phares** : seules les parties claires des optiques (lentilles, réflecteurs, signature lumineuse) s'allument, le
+  boîtier reste sombre ; éclat et traînée plus discrets.
+- **Plaque arrière de la M4** : sur la face de la malle, juste sous le logo, inclinée comme elle (15°) — elle était
+  sur la bande plate au-dessus du diffuseur, puis en haut du bouclier, encore trop basse au goût du porteur.
+- **Outils dans la nuit** : un métal renvoie la couleur de la lumière qu'il reçoit ; sous le clair de lune et le ciel,
+  les chromes de la mallette paraissaient bleus. Dans la nuit, leur acier sombre prend une teinte chaude qui compense
+  ce bleu (gris neutre) ; lanterne et phares allumés, il redevient chrome.
+- **Voiture de la Méthode** : ses couleurs réelles de nuit au lieu d'une luminance froide — lanterne chaude, ciel
+  froid, normales du scan lissées, reflet discret, liseré — et une plaque MECA RIVIERA sur son support avant (la bande
+  saillante de la plaque d'origine, relevée sur le scan). Le scan en haute définition (textures 2048) demanderait plus
+  de 100 Mo de mémoire graphique : écarté. Ordinateur : programme propre, inchangé.
