@@ -235,3 +235,35 @@ Sous 900 px uniquement ; l'ordinateur reste tel quel (scène identique au pixel 
   qui est à moins de 3,5 cm au-dessus de ce plan ; hors du contour mesuré de la carrosserie (3,98 × 1,76 m), la
   soudure sol-caisse sous 50 cm (les rétroviseurs restent) ; au-delà de 16 cm, tout. La place est posée sur ce
   même plan, les pneus reposent dessus ; ombre de contact resserrée sous la caisse.
+
+### 2026-09-13 — Téléphone : la nuit en haut de page, la vraie lumière et l'ombre, les flammes, l'entrée, la fluidité
+Sous 900 px uniquement ; l'ordinateur reste tel quel (19 programmes GPU, scène identique hors lissage des textes).
+- **La nuit en haut de page** : la lanterne ne reste plus allumée. Elle s'allume dès que la page quitte le haut
+  (papillotement, éclat, 1,6 s) et s'éteint en fondu (0,5 s) quand on y revient ; en redescendant, nouvel allumage.
+  Mouvement réduit : un fondu, sans papillotement ni éclat.
+- **La vraie lumière** : la lanterne voisine devient la source de la scène — sur la carrosserie (140 cd, sans portée
+  limite, un éclat à l'allumage) et au sol, en optique routière (répartition « en ailes » : éclairement soutenu
+  jusqu'à 7,5 m, où se tient le véhicule, puis qui tombe ; surcroît au pied), hautes lumières adoucies plutôt
+  qu'écrêtées. Verre, halo, cône de lumière et garde-corps renforcés d'autant ; le lampadaire d'en face reste la
+  lumière de face de la carrosserie (85 cd), discret au sol.
+- **L'ombre portée** : la silhouette exacte du véhicule projetée sur le sol (les vitres laissent passer la lumière),
+  adoucie en deux pénombres — nette au contact, large en s'éloignant — ; calculée une fois au chargement (véhicule et
+  lanterne immobiles) et lue par le sol en une texture : aucune ombre en temps réel. Source : la lanterne (même côté,
+  même hauteur) ramenée à hauteur du milieu du véhicule — l'ombre de la lanterne exacte, derrière lui, filerait droit
+  vers la caméra et se confondrait avec la nuit ; elle se couche ainsi à côté de lui, sur le sol éclairé. Dans
+  l'ombre, un dixième de la lumière (renvoi de l'alentour) : jamais un noir plein.
+- **Lignes blanches** : peinture routière neuve, d'un blanc franc (albédo 0,82, usure presque nulle), qui renvoie la
+  moindre lumière et reste lisible au clair de lune ; de même sur la place de l'inspection.
+- **Flammes à l'arrêt Échappement** : à l'arrivée de la caméra, une seule fois par visite (même en revenant) — une
+  longue gerbe puis trois détonations qui s'espacent (1,2 s). Une flamme par sortie, sur les embouts relevés de
+  chaque modèle (quatre trapèzes, deux ovales à double tube, quatre ronds) : cœur bleu au débouché, jaune, orange,
+  pointe rouge qui se déchire ; éclat au débouché, lueur orangée sur l'arrière du véhicule et au sol. Cadrage mobile de
+  l'arrêt : un pas en retrait, recentré sur la poupe — les quatre sorties dans le cadre. Mouvement réduit : aucune.
+- **L'entrée à chaque arrivée** : rechargée, rouverte, revenue par l'historique ou par un lien d'ancre, la page repart
+  du haut (restauration du défilement désactivée) et l'entrée dure ses 5 s pleines — une fine barre blanche s'y
+  remplit —, la page immobile ; un geste ne l'écourte plus.
+- **Fluidité** : sur téléphone, le sol ne calcule plus les phares et lampadaires de l'ordinateur (branche selon le
+  format) ; plus aucune mesure de mise en page par image (dimensions de la vue, bas de section des légendes, haut de
+  la zone relevés au redimensionnement ; propriétés du relais réécrites seulement si elles changent) ; la définition
+  baisse d'un cran dès que les images passent sous ~45 i/s (au lieu de 24), jusqu'à 1 sur l'inspection. L'ombre
+  calculée une fois et les flammes invisibles au repos ne coûtent rien.
