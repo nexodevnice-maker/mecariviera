@@ -282,9 +282,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const spec = vehicleById(vehicle);
   // Arrêt Échappement : les flammes des quatre sorties, leur traînée et leur lueur.
   const flames = exhaustFlames(spec.exhaust);
-  // Les phares xénon et les feux arrière, qui s'allument avec le lampadaire (optiques du modèle modifiées sur
-  // téléphone seulement : l'ordinateur garde ses programmes).
-  const lamps = headlamps(car, spec.lamps, spec.tail, narrow.matches);
+  // Les phares xénon et les feux arrière, qui s'allument avec le lampadaire (optiques du modèle rendues émissives).
+  const lamps = headlamps(car, spec.lamps, spec.tail, true);
   // Devant le véhicule, la mallette du mécanicien, grande ouverte face à la caméra — décollée de lui (1,25 m devant le
   // bouclier, côté chaussée) : phares, plaque et calandre restent dégagés, et elle tient dans le cadre du premier plan
   // comme de la face avant ; sur l'esplanade, un banc et sa silhouette.
@@ -302,8 +301,9 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     () => {},
   );
   const plates = licensePlates(spec.plates, plateTexture(family, Math.min(8, renderer.capabilities.getMaxAnisotropy())));
-  // Tout ce qui n'existe que sur téléphone (dans la scène sur téléphone seulement, resize).
+  // La corniche et ses lumières, les flammes, les feux, la mallette, le banc, les plaques : sur tous les formats.
   const phoneSet = new Group().add(corniche.group, flames.group, flames.light, lamps.group, kit, contactShadow(kit), bench, plates);
+  scene.add(phoneSet);
   const roadUniforms = (road.material as ShaderMaterial).uniforms;
   roadUniforms.uFlameAt.value.copy(flames.at);
   roadUniforms.uHeadAt.value.set(spec.lamps.center[0], spec.lamps.face);
@@ -323,9 +323,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       (carBox.max.z - carBox.min.z) / 2,
     );
   };
-  (road.material as ShaderMaterial).uniforms.uNoise.value.anisotropy = narrow.matches
-    ? Math.min(8, renderer.capabilities.getMaxAnisotropy())
-    : 1;
+  (road.material as ShaderMaterial).uniforms.uNoise.value.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   // Le décor : la baie de Villefranche la nuit (photo, bande du format de l'écran) et sa lune ; à défaut, des
   // lumières de côte dessinées.
   const [bayImage, moonImage] = await Promise.all([assets.bay, assets.moon]);
@@ -349,7 +347,6 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   let lampFrozen = false;
   const headColor = new Color();
   const updateLamp = () => {
-    if (!narrow.matches) return;
     const t = lampT;
     const on = lampFade * lampFade * (3 - 2 * lampFade);
     const level = (reduced.matches ? 1 : ignition(t)) * on;
@@ -424,8 +421,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     hero.position.set(...first.position);
     hero.lookAt(...first.target);
     offset(hero, first.shift);
-    // Le décor couvre tout ce qui est au-delà du sol : la bordure (ordinateur), le garde-corps (téléphone).
-    return backdrop.fit(hero, narrow.matches ? EDGE : KERB, { ...(narrow.matches ? FIT_TALL : FIT_WIDE), ...options });
+    // Le décor couvre tout ce qui est au-delà du sol, à partir du garde-corps de l'esplanade.
+    return backdrop.fit(hero, EDGE, { ...(narrow.matches ? FIT_TALL : FIT_WIDE), ...options });
   };
 
   // Extinction (dernier arrêt) : les phares d'abord — leur flaque quitte la chaussée —, puis la rue, la mer
@@ -434,9 +431,9 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const applyNight = (n: number) => {
     (road.material as ShaderMaterial).uniforms.uHeadlights.value = 1 - MathUtils.smoothstep(n, 0, 0.45);
     if (night) night.style.opacity = MathUtils.smoothstep(n, 0.35, 1).toFixed(3);
-    // Téléphone : les lampadaires s'éteignent comme les phares.
+    // Les lampadaires s'éteignent comme les phares.
     const out = 1 - MathUtils.smoothstep(n, 0, 0.45);
-    if (narrow.matches && out !== lampUniforms.uOut.value) {
+    if (out !== lampUniforms.uOut.value) {
       lampUniforms.uOut.value = out;
       updateLamp();
     }
@@ -532,28 +529,14 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     if (narrow.matches !== wasNarrow) {
       wasNarrow = narrow.matches;
       buildPath();
-      // Retour à l'ordinateur : la lumière de la scène posée (celle de l'arrivée des phares, achevée).
-      if (!narrow.matches) {
-        scene.environmentRotation.y = 0;
-        scene.environmentIntensity = 1;
-      }
     }
     renderer.setPixelRatio(narrow.matches ? phoneQuality.ratio : dprSteps[dprLevel]);
     renderer.setSize(vw, vh, false);
-    lights.visible = !backdrop && !narrow.matches;
-    // Le sol selon le format. Ordinateur : la route s'arrête au début du trottoir, après la pierre de bordure,
-    // la baie au-delà. Téléphone : la place marquée, l'esplanade et son garde-corps, la baie au-delà.
+    lights.visible = !backdrop;
+    // Le sol, sur tous les formats : la place marquée, l'esplanade et son garde-corps, la baie au-delà.
     const ground = (road.material as ShaderMaterial).uniforms;
-    ground.uMobile.value = narrow.matches ? 1 : 0;
-    const roadMaterial = road.material as ShaderMaterial;
-    if (roadMaterial.defines.PHONE !== Number(narrow.matches)) {
-      roadMaterial.defines.PHONE = Number(narrow.matches);
-      roadMaterial.needsUpdate = true;
-    }
-    ground.uCut.value = backdrop ? (narrow.matches ? EDGE - 0.05 : KERB - KERB_STONE) : -1000;
-    if (narrow.matches) scene.add(phoneSet);
-    else scene.remove(phoneSet);
-    if (narrow.matches && !shadeReady) bakeShade();
+    ground.uCut.value = backdrop ? EDGE - 0.05 : -1000;
+    if (!shadeReady) bakeShade();
     (lights.material as ShaderMaterial).uniforms.uPixelRatio.value = renderer.getPixelRatio();
     const aspect = vw / vh;
     camera.aspect = aspect;
@@ -584,10 +567,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const applyIntro = (t: number) => {
     const e = 1 - (1 - t) ** 3;
     (road.material as ShaderMaterial).uniforms.uArrival.value = e;
-    // Téléphone : pas de phares — la lumière de la scène suit les lampadaires (updateLamp).
-    if (narrow.matches) return updateLamp();
-    scene.environmentRotation.y = (1 - e) * -1.2;
-    scene.environmentIntensity = 0.72 + 0.28 * e;
+    // La lumière de la scène suit les lampadaires (updateLamp).
+    updateLamp();
   };
   let introStart = 0;
   let introDone = reduced.matches;
@@ -669,9 +650,9 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       introDone = t >= 1;
       changed = true;
     }
-    // Téléphone : la lanterne suit le haut de la page — allumage (papillotement, éclat) dès qu'on le quitte,
-    // extinction en fondu quand on y revient.
-    if (narrow.matches && !lampFrozen) {
+    // La lanterne suit le haut de la page — allumage (papillotement, éclat) dès qu'on le quitte, extinction en fondu
+    // quand on y revient.
+    if (!lampFrozen) {
       // (Zoom au pincement : la position d'avant le zoom, tenue — guide.ts.)
       const wanted = (zoomHold() ?? window.scrollY) > 2;
       if (wanted !== lampOn) {
@@ -693,8 +674,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
         changed = true;
       }
     }
-    // Arrêt Échappement (téléphone) : les flammes, une fois, dès que la caméra s'y pose (le scroll y est arrêté).
-    if (narrow.matches && !flameDone) {
+    // Arrêt Échappement : les flammes, une fois, dès que la caméra s'y pose (le scroll y est arrêté).
+    if (!flameDone) {
       if (flameStart < 0 && Math.abs(target - rearStop) < 0.2 && Math.abs(current - rearStop) < 0.12) {
         flameStart = now;
         // Pendant les flammes, la Méthode diffère sa mise en place (Method.astro) : rien ne les fait saccader.
@@ -1156,13 +1137,15 @@ function grainTexture() {
 function street() {
   const material = new ShaderMaterial({
     // Programme du format : 1 sur téléphone (resize).
-    defines: { PHONE: 0 },
+    // Le sol de la place, de l'esplanade et des lanternes, sur tous les formats (le sol de l'ordinateur, desk, n'est plus
+    // compilé).
+    defines: { PHONE: 1 },
     uniforms: {
       uInk: { value: new Color(INK) },
       uArrival: { value: 1 },
       uHeadlights: { value: 1 },
       uCut: { value: -1000 },
-      uMobile: { value: 0 },
+      uMobile: { value: 1 },
       // Téléphone : ombre portée (castShadow ; aucune ombre en attendant), lueur des flammes.
       uShade: { value: Object.assign(new DataTexture(new Uint8Array(4), 1, 1), { needsUpdate: true }) },
       uShadeArea: { value: new Vector4(0, 0, 1, 1) },

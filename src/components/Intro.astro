@@ -1,13 +1,10 @@
 ---
 /**
- * Entrée : « MECA RIVIERA — PRESENT » sur la nuit, le temps que la première scène soit réellement prête
- * (première image de la 3D rendue ; sans WebGL, l'affiche décodée). À chaque arrivée — rechargement, réouverture,
- * retour par l'historique, lien vers une section — on atterrit sur le premier plan et l'immersion recommence.
- * Ordinateur : ni pourcentage, ni barre ; elle se lève dès que la scène est prête — jamais avant une seconde de
- * lecture —, au plus tard après 5 s (l'affiche, identique à la première image de la 3D, prend alors le relais et la
- * 3D la remplace à son arrivée), et aussitôt à la moindre interaction. Téléphone : 2,5 s pleines, une fine barre
- * blanche qui se remplit, la page immobile pendant ce temps. L'arrivée des phares attend qu'elle se lève (événement
- * meca:enter). Sans script : aucune entrée. Téléphone : en bas à gauche, les mentions de l'éditeur, comme au générique.
+ * Entrée : « MECA RIVIERA — PRESENT » sur la nuit. À chaque arrivée — rechargement, réouverture, retour par
+ * l'historique, lien vers une section — on atterrit sur le premier plan et l'immersion recommence. Sur tous les
+ * formats : 2,5 s pleines, une fine barre blanche qui se remplit, la page immobile pendant ce temps (si la 3D n'est
+ * pas prête, l'affiche, identique à sa première image, prend le relais) ; en bas à gauche, les mentions de l'éditeur,
+ * comme au générique. La scène attend qu'elle se lève (événement meca:enter). Sans script : aucune entrée.
  */
 const year = new Date().getFullYear();
 ---
@@ -74,8 +71,8 @@ const year = new Date().getFullYear();
     // Page restaurée telle quelle (retour par l'historique) : rechargée, l'entrée avec.
     addEventListener('pageshow', (event) => event.persisted && location.reload());
     root.classList.add('has-intro');
-    // Téléphone : la page immobile pendant l'entrée.
-    if (matchMedia('(max-width: 899px)').matches) root.classList.add('intro-lock');
+    // La page immobile pendant l'entrée.
+    root.classList.add('intro-lock');
   })();
 </script>
 <div class="intro" data-intro aria-hidden="true" data-nosnippet>
@@ -98,10 +95,10 @@ const year = new Date().getFullYear();
     const intro = document.querySelector('[data-intro]');
     if (!intro) return;
     if (!root.classList.contains('has-intro')) return intro.remove();
-    // Téléphone : l'entrée dure ses 2,5 s (la barre), sans être écourtée par un geste.
-    const phone = matchMedia('(max-width: 899px)').matches;
-    const MIN = phone ? 2500 : 1300; // lecture du titre, même quand tout est déjà en cache
-    const MAX = phone ? 2500 : 5000; // au-delà, l'affiche prend le relais : la page n'attend pas une ressource lente
+    // L'entrée dure ses 2,5 s (la barre), sans être écourtée par un geste ; au-delà, si la 3D n'est pas prête,
+    // l'affiche prend le relais : la page n'attend pas une ressource lente.
+    const MIN = 2500;
+    const MAX = 2500;
     const start = performance.now();
     let leaving = false;
     const leave = (instant) => {
@@ -134,7 +131,6 @@ const year = new Date().getFullYear();
     );
     // Contrôle QA (captures) : levée immédiate, sans transition.
     addEventListener('meca:intro-finish', () => leave(true), { once: true });
-    if (!phone) for (const type of ['wheel', 'touchstart', 'keydown', 'scroll']) addEventListener(type, () => leave(false), { passive: true, once: true });
     // Le titre n'apparaît qu'avec sa police (préchargée) : jamais de changement de fonte à l'écran.
     Promise.race([document.fonts ? document.fonts.ready : null, new Promise((resolve) => setTimeout(resolve, 800))]).then(() =>
       intro.classList.add('is-set'),
@@ -214,62 +210,55 @@ const year = new Date().getFullYear();
     transition-delay: 0.45s;
   }
 
-  /* Téléphone : la barre de chargement (2,5 s, linéaire) ; la page ne défile pas pendant l'entrée. */
-  .intro__bar,
-  .intro__legal {
-    display: none;
+  /* La barre de chargement (2,5 s, linéaire) ; la page ne défile pas pendant l'entrée. */
+  :global(html.intro-lock) {
+    overflow: hidden;
   }
 
-  @media (max-width: 899px) {
-    :global(html.intro-lock) {
-      overflow: hidden;
-    }
+  .intro {
+    touch-action: none;
+  }
 
-    .intro {
-      touch-action: none;
-    }
+  .intro__bar {
+    display: block;
+    width: 7.5rem;
+    height: 2px;
+    margin-top: 0.75rem;
+    background: rgb(242 241 238 / 0.14);
+    overflow: hidden;
+  }
 
-    .intro__bar {
-      display: block;
-      width: 7.5rem;
-      height: 2px;
-      margin-top: 0.75rem;
-      background: rgb(242 241 238 / 0.14);
-      overflow: hidden;
-    }
+  .intro__bar span {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #fff;
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    animation: intro-load 2.5s linear forwards;
+  }
 
-    .intro__bar span {
-      display: block;
-      width: 100%;
-      height: 100%;
-      background: #fff;
-      transform: scaleX(0);
-      transform-origin: 0 50%;
-      animation: intro-load 2.5s linear forwards;
-    }
+  /* Les mentions : petites capitales discrètes, en bas à gauche, qui arrivent avec le titre. */
+  .intro__legal {
+    position: absolute;
+    inset: auto auto calc(1.25rem + env(safe-area-inset-bottom)) var(--gutter);
+    /* Hors du centrage de l'entrée (grille centrée) : calé en bas à gauche. */
+    place-self: end start;
+    display: grid;
+    gap: 0.3rem;
+    font-stretch: var(--semi);
+    font-weight: 500;
+    font-size: 0.625rem;
+    line-height: 1.3;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    opacity: 0;
+    transition: opacity 1.2s var(--ease-out) 0.6s;
+  }
 
-    /* Les mentions : petites capitales discrètes, en bas à gauche, qui arrivent avec le titre. */
-    .intro__legal {
-      position: absolute;
-      inset: auto auto calc(1.25rem + env(safe-area-inset-bottom)) var(--gutter);
-      /* Hors du centrage de l'entrée (grille centrée) : calé en bas à gauche. */
-      place-self: end start;
-      display: grid;
-      gap: 0.3rem;
-      font-stretch: var(--semi);
-      font-weight: 500;
-      font-size: 0.625rem;
-      line-height: 1.3;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--text-3);
-      opacity: 0;
-      transition: opacity 1.2s var(--ease-out) 0.6s;
-    }
-
-    .intro.is-set .intro__legal {
-      opacity: 1;
-    }
+  .intro.is-set .intro__legal {
+    opacity: 1;
   }
 
   @keyframes intro-load {

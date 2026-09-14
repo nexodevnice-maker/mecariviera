@@ -370,3 +370,22 @@ Visuel sur téléphone seulement ; le premier plan vaut pour tous les formats.
     image entre chacune.
   - Résultat : écran bridé, définition 2 sur les deux scènes (au lieu de 0,75 et 1) ; processeur ÷4, plus longue tâche
     bloquante ramenée de 1,1–7,5 s à 0,16 s, blocages cumulés de 3,0–14,6 s à 1,8 s.
+
+### 2026-09-14 — L'ordinateur comme le téléphone (demande du porteur : « reporte absolument tout »)
+Fin de la règle « téléphone seulement » : ce qui était réservé au téléphone vaut désormais sur tous les formats.
+- **Scène d'ouverture** : la nuit en haut de page et l'allumage du lampadaire (vraie lumière, ombre portée), l'esplanade,
+  son garde-corps et la place marquée, les phares xénon et les feux arrière (et leurs lueurs au sol), la mallette, le
+  banc et sa silhouette, les plaques MECA RIVIERA, les flammes de l'Échappement. L'arrivée des phares du mécanicien et
+  le sol de l'ordinateur d'avant ne sont plus utilisés.
+- **Méthode** : la voiture en couleurs réelles de nuit, sur sa place, avec sa plaque, la lueur bleue après le relevé ;
+  le recul final est commun aux deux formats (la zone monte par-dessus).
+- **Défilement** : les pas guidés — un cran de molette, un geste du pavé tactile ou une page du clavier : un plan — et le
+  zoom tenu.
+- **Zone** : la carte de Cannes à Beaulieu et son drapeau (celle d'Antibes à Nice est retirée), ses textes ramenés à la
+  taille de la page ; le relais par la ligne de relevé ; les deux boutons d'appel, côte à côte.
+- **Contact et en-tête** : la barre d'appel et son choix des deux numéros (compacte, en bas à droite) ; le Snapchat et la
+  disponibilité dans l'en-tête ; « MECA » au bleu de la marque.
+- **Entrée** : 2,5 s, la barre, les mentions en bas à gauche.
+- Restent propres à chaque format les seules adaptations de mise en page : colonne de texte (ordinateur) ou légendes en
+  bas de l'écran (téléphone), cadrages de caméra, trait de rappel (ordinateur) ou point lumineux (téléphone), affiches.
+  L'ordinateur compile désormais les 30 programmes du téléphone (19 auparavant) ; ses affiches sont refaites.

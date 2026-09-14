@@ -120,11 +120,9 @@ textarea {
   text-transform: uppercase;
 }
 
-/* Marque, sur téléphone : « MECA » au bleu clair de la charte, « RIVIERA » dans la couleur du texte. */
-@media (max-width: 899px) {
-  .meca {
-    color: var(--blue-soft);
-  }
+/* Marque : « MECA » au bleu clair de la charte, « RIVIERA » dans la couleur du texte. */
+.meca {
+  color: var(--blue-soft);
 }
 
 /* Grain argentique léger (desktop) : de la matière sur la carrosserie et les dégradés, sans relever
@@ -150,13 +148,11 @@ textarea {
   contain-intrinsic-size: auto 1000px;
 }
 
-/* Téléphone : la zone monte par-dessus la Méthode, sa ligne de relevé déborde au-dessus d'elle (Territory). La demande
-   est mise en page dès le chargement (sous l'entrée), et non à l'arrivée sur la carte : aucun à-coup à ce moment-là. */
-@media (max-width: 899px) {
-  #zone.is-handoff,
-  #demande {
-    content-visibility: visible;
-  }
+/* La zone monte par-dessus la Méthode, sa ligne de relevé déborde au-dessus d'elle (Territory). La demande est mise en
+   page dès le chargement (sous l'entrée), et non à l'arrivée sur la carte : aucun à-coup à ce moment-là. */
+#zone.is-handoff,
+#demande {
+  content-visibility: visible;
 }
 
 /* Boutons : angles francs, pas de pilule. */

@@ -168,10 +168,10 @@ const SHOTS: Record<Key, Shot> = {
   // d'au-dessus, dans le même axe —, puis la zone d'intervention monte par-dessus (Territory.astro). La lampe
   // s'éteint.
   depart: {
-    position: [1.36, 40, -1.09],
-    target: [0.055, 0, -0.359],
+    position: [8.37, 7.6, -4.99],
+    target: [0.055, 0.2, -0.359],
     shift: 0.2,
-    mobile: { position: [8.37, 7.6, -4.99], target: [0.055, 0.2, -0.359], shift: 0.22 },
+    mobile: { shift: 0.22 },
     focus: BAY,
     radii: BAY_RADII,
     focusMix: 0,
@@ -480,7 +480,8 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     // Le scan n'a pas de normales : lissées ici, pour un modelé continu (téléphone).
     mesh.geometry.computeVertexNormals();
     const material = new ShaderMaterial({
-      defines: { PHONE: 0 },
+      // Couleurs réelles de nuit sur tous les formats (le rendu désaturé de l'ordinateur n'est plus compilé).
+      defines: { PHONE: 1 },
       uniforms: { ...uniforms, map: { value: source.map } },
       vertexShader,
       fragmentShader,
@@ -521,7 +522,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
   let positions: CatmullRomCurve3;
   let targets: CatmullRomCurve3;
   let shift = 0;
-  /** Téléphone : la pièce nommée au bleu de la marque (resize) ; 0 sur ordinateur. */
+  /** La pièce nommée au bleu de la marque (resize : tous formats). */
   let accent = 0;
 
   const buildPath = () => {
@@ -632,17 +633,11 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
       wasNarrow = narrow.matches;
       buildPath();
     }
-    // Téléphone : la voiture détourée sur sa place de parking, les pièces nommées au bleu de la marque.
-    uniforms.uCutout.value = narrow.matches ? 1 : 0;
-    accent = narrow.matches ? 1 : 0;
-    if (narrow.matches) scene.add(ground, plate);
-    else scene.remove(ground, plate);
-    for (const material of scanMaterials) {
-      if (material.defines.PHONE !== Number(narrow.matches)) {
-        material.defines.PHONE = Number(narrow.matches);
-        material.needsUpdate = true;
-      }
-    }
+    // Tous formats : la voiture détourée sur sa place de parking, en couleurs de nuit, sa plaque, les pièces nommées au
+    // bleu de la marque (après le relevé).
+    uniforms.uCutout.value = 1;
+    accent = 1;
+    scene.add(ground, plate);
     vw = viewport.clientWidth;
     vh = viewport.clientHeight;
     renderer.setPixelRatio(pixelRatio());

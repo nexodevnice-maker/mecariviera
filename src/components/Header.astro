@@ -169,11 +169,44 @@ const snap = contact.snapchat.value;
     }
   }
 
-  /* Téléphone : entre la marque et la disponibilité, le Snapchat de MECA RIVIERA (centré dans l'espace libre) ;
-     la disponibilité remplace le numéro, qui reste dans le hero et la barre d'appel. Absents sur ordinateur. */
-  .header-snap,
+  /* Sur tous les formats : le Snapchat de MECA RIVIERA, centré dans l'espace libre avant les actions, et la
+     disponibilité. Téléphone : elle remplace le numéro, qui reste dans le hero et la barre d'appel. */
+  .header-snap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-inline: auto;
+    color: var(--text);
+    transition: color 0.2s;
+  }
+
+  .header-snap svg {
+    width: 1.375rem;
+    height: 1.375rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+  }
+
+  .header-snap:hover,
+  .header-snap:active {
+    color: var(--blue-soft);
+  }
+
+  .site-header__actions {
+    margin-left: 0;
+  }
+
   .header-hours {
-    display: none;
+    display: inline;
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
   }
 
   @media (max-width: 899px) {
@@ -181,45 +214,8 @@ const snap = contact.snapchat.value;
       gap: 1rem;
     }
 
-    .header-snap {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      flex: none;
-      width: 2.75rem;
-      height: 2.75rem;
-      margin-inline: auto;
-      color: var(--text);
-      transition: color 0.2s;
-    }
-
-    .header-snap svg {
-      width: 1.375rem;
-      height: 1.375rem;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 1.6;
-      stroke-linejoin: round;
-    }
-
-    .header-snap:active {
-      color: var(--blue-soft);
-    }
-
-    .site-header__actions {
-      margin-left: 0;
-    }
-
     .header-phone {
       display: none;
-    }
-
-    .header-hours {
-      display: inline;
-      font-weight: 600;
-      font-size: 0.875rem;
-      letter-spacing: 0.01em;
-      white-space: nowrap;
     }
   }
 </style>

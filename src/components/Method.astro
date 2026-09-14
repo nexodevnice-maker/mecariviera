@@ -388,9 +388,10 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
 
   /* — Prendre de la hauteur ——————————————————— */
 
+  /* Un écran après le dernier cadrage : la zone d'intervention y monte par-dessus la vue encore épinglée (Territory). */
   .insp__tail {
-    height: 60vh;
-    height: 60svh;
+    height: 100vh;
+    height: 100svh;
   }
 
   /* Relais vers la zone d'intervention : la scène s'éteint sous la feuille qui monte (Territory.astro). */
@@ -415,12 +416,12 @@ const SPAN: Record<string, number> = { capot: 100, huile: 80, refroidissement: 8
 
   /* — Mobile : le véhicule en haut, le texte en feuilles qui montent par-dessus ——— */
 
-  @media (max-width: 899px) {
-    /* Relais vers la zone : le voile de nuit passe par le compositeur (aucun redessin plein écran à chaque pas). */
-    .method__viewport::before {
-      will-change: opacity;
-    }
+  /* Relais vers la zone : le voile de nuit passe par le compositeur (aucun redessin plein écran à chaque pas). */
+  .method__viewport::before {
+    will-change: opacity;
+  }
 
+  @media (max-width: 899px) {
     .insp {
       display: block;
       min-height: 0;

@@ -8,7 +8,8 @@ import type { StageProgress } from './stage-progress';
  * de la page jusqu'à la carte (dernier point) ; au-delà, défilement libre. Les liens internes vont droit au
  * but : sans pas intermédiaires, jusqu'au premier palier de la section visée.
  */
-export const guided = matchMedia('(max-width: 899px) and (pointer: coarse)');
+// Tous formats : au doigt sur téléphone, un cran de molette ou un geste du pavé tactile sur ordinateur.
+export const guided = matchMedia('all');
 const html = document.documentElement;
 const points: { el: HTMLElement; y: number }[] = [];
 /** Scroll du dernier point (le haut de la carte) : au-delà, défilement libre. */
@@ -95,9 +96,65 @@ const onClick = (event: MouseEvent) => {
   settle();
 };
 
+/**
+ * Molette et clavier (ordinateur) : un geste, un plan — un cran, ou un geste du pavé tactile élan compris, mène au point
+ * suivant dans le sens du geste. Sans ce relais, un cran ne parcourt qu'une fraction de l'écart entre deux plans et
+ * l'accroche ramènerait au plan de départ. Au-delà du haut de la carte, le défilement reste libre ; remonter depuis
+ * son haut ramène au dernier plan. Pendant l'entrée, rien.
+ */
+let stepLock = 0;
+let wheelSum = 0;
+const stepping = (dir: number) => {
+  const y = window.scrollY;
+  if (!guided.matches || navigating || zoomAt !== null || !points.length) return false;
+  if (html.classList.contains('intro-lock') || html.classList.contains('is-held')) return false;
+  return dir > 0 ? y < end - 2 : y <= end + 2;
+};
+const stepTo = (dir: number) => {
+  const y = window.scrollY;
+  const stops = [...points.map((p) => p.y), end];
+  const next = dir > 0 ? stops.find((s) => s > y + 2) : stops.filter((s) => s < y - 2).pop();
+  if (next === undefined) return false;
+  window.scrollTo({ top: next, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  return true;
+};
+const onWheel = (event: WheelEvent) => {
+  if (event.ctrlKey || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+  const dir = Math.sign(event.deltaY);
+  if (!dir || !stepping(dir)) return;
+  event.preventDefault();
+  const now = performance.now();
+  // Les crans qui suivent (élan du pavé tactile, molette qui tourne encore) appartiennent au même geste.
+  if (now < stepLock) {
+    stepLock = Math.max(stepLock, now + 200);
+    return;
+  }
+  wheelSum += event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+  if (Math.abs(wheelSum) < 20) return;
+  wheelSum = 0;
+  if (stepTo(dir)) stepLock = now + 700;
+};
+const KEYS: Record<string, number> = { ArrowDown: 1, PageDown: 1, ' ': 1, ArrowUp: -1, PageUp: -1 };
+const onKey = (event: KeyboardEvent) => {
+  let dir = KEYS[event.key];
+  if (!dir || event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
+  if (event.key === ' ' && event.shiftKey) dir = -1;
+  // Jamais dans un champ ; Espace laissé aux boutons qu'il actionne.
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.closest('input, textarea, select, [contenteditable]')) return;
+  if (event.key === ' ' && target?.closest('button, summary')) return;
+  if (!stepping(dir)) return;
+  event.preventDefault();
+  const now = performance.now();
+  if (now < stepLock) return;
+  if (stepTo(dir)) stepLock = now + 450;
+};
+
 function start() {
   if (started) return;
   started = true;
+  addEventListener('wheel', onWheel, { passive: false });
+  addEventListener('keydown', onKey);
   addEventListener(
     'scroll',
     () => {

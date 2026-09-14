@@ -188,9 +188,20 @@ const phones = contact.phones.value;
     }
   }
 
+  /* Ordinateur : la même barre, compacte, posée en bas à droite ; le choix des numéros au-dessus d'elle. */
   @media (min-width: 900px) {
     .mbar {
-      display: none;
+      inset: auto var(--gutter) 1.5rem auto;
+      width: 22rem;
+      padding: 0.625rem;
+      border: 1px solid var(--line);
+      transform: translateY(calc(100% + 2rem));
+    }
+
+    .mbar__pick {
+      padding: 1rem 0.625rem 0.625rem;
+      border: 1px solid var(--line);
+      border-bottom: 0;
     }
   }
 
