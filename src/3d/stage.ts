@@ -45,11 +45,13 @@ import {
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
+  TubeGeometry,
   Vector2,
   Vector3,
   Vector4,
   WebGLRenderer,
   WebGLRenderTarget,
+  type Material,
   type MeshPhysicalMaterial,
   type Object3D,
   type Texture,
@@ -65,7 +67,7 @@ import { mergeByMaterial, toolCase } from './props';
 import { createQuality } from './quality';
 import { guidedPace, paced, RIGS, type Framing, type Shot, type StopKey } from './rigs';
 import { STUDIO_ENV_SIGMA, STUDIO_PANELS } from './studio';
-import { vehicleById, type Exhaust, type Lamps, type Plate, type VehicleId } from './vehicles';
+import { vehicleById, type Cabin, type Exhaust, type Lamps, type Plate, type VehicleId } from './vehicles';
 
 const INK = 0x0b0c0e;
 /**
@@ -162,6 +164,18 @@ const XENON: [number, number][] = [
 /** Faisceau des phares dans l'air (m) ; le banc et sa silhouette, sur l'esplanade (z). */
 const BEAM_LENGTH = 7;
 const BENCH_Z = -12;
+/**
+ * Téléphone, pleins phares : lumière qu'ils portent sur la mallette (unités physiques) et longueur de leur faisceau
+ * dans l'air (m).
+ */
+const HIGH_BEAM = 18;
+const HIGH_BEAM_LENGTH = 13;
+/**
+ * Téléphone : le corbeau, perché sur la main courante du garde-corps (x, dessus de la main courante, z) — à gauche du
+ * banc vu du premier plan, dans le noir entre deux lanternes, la baie éclairée derrière lui ; de dos, tourné vers la
+ * mer (cap du bec autour de la verticale, rad).
+ */
+const RAVEN: { at: [number, number, number]; yaw: number } = { at: [EDGE, 1.125, -11.25], yaw: -2.33 };
 
 /**
  * Téléphone, arrêt Échappement : les flammes des quatre sorties, une seule fois, à l'arrivée de la caméra — une
@@ -231,6 +245,12 @@ const nextFrame = () => new Promise<number>((resolve) => requestAnimationFrame(r
 export async function createStage({ root, canvas, stops, progress, narrow, vehicle, assets }: StageOptions) {
   const viewport = canvas.parentElement as HTMLElement;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  // Téléphone : le corbeau du garde-corps (fichier à part, léger), chargé avec la scène.
+  const ravenFile = narrow.matches
+    ? fetch('/3d/raven-m.glb')
+        .then((response) => (response.ok ? response.arrayBuffer() : null))
+        .catch(() => null)
+    : Promise.resolve(null);
 
   const renderer = new WebGLRenderer({
     canvas,
@@ -256,7 +276,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   MeshoptDecoder.useWorkers?.(2);
   const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(await assets.model, '');
   const car = prepareCar(gltf.scene);
-  const road = street();
+  const road = street(narrow.matches);
   scene.add(car, contactShadow(car), road);
   // Téléphone : la nuit et la pleine lune, puis les lampadaires qui s'allument au premier geste — niveaux partagés
   // par le sol, le garde-corps et le cône de lumière (mêmes uniformes).
@@ -284,6 +304,9 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const flames = exhaustFlames(spec.exhaust);
   // Les phares xénon et les feux arrière, qui s'allument avec le lampadaire (optiques du modèle rendues émissives).
   const lamps = headlamps(car, spec.lamps, spec.tail, true);
+  // Téléphone : l'éclairage d'ambiance de l'habitacle — de vraies barrettes LED, dans la couleur de la voiture, allumées
+  // avec les feux.
+  const cabin = ambientStrips(spec.cabin);
   // Devant le véhicule, la mallette du mécanicien, grande ouverte face à la caméra — décollée de lui (1,25 m devant le
   // bouclier, côté chaussée) : phares, plaque et calandre restent dégagés, et elle tient dans le cadre du premier plan
   // comme de la face avant ; sur l'esplanade, un banc et sa silhouette.
@@ -304,6 +327,14 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   // La corniche et ses lumières, les flammes, les feux, la mallette, le banc, les plaques : sur tous les formats.
   const phoneSet = new Group().add(corniche.group, flames.group, flames.light, lamps.group, kit, contactShadow(kit), bench, plates);
   scene.add(phoneSet);
+  // Téléphone seulement (resize : l'ordinateur ne les compile jamais) — les pleins phares, qui portent leur lumière sur
+  // la mallette ; l'éclat scintillant des feux stop ; les barrettes LED de l'habitacle ; le corbeau du garde-corps.
+  const highBeam = new SpotLight(0xa9c4ff, 0, 0, 0.62, 0.7, 2);
+  highBeam.position.set(0, spec.lamps.center[1], spec.lamps.face + 0.15);
+  highBeam.target.position.set(0, 0.1, spec.lamps.face + 12);
+  const handset = new Group().add(highBeam, highBeam.target, lamps.handset, cabin.group);
+  const ravenBuffer = await ravenFile;
+  if (ravenBuffer) handset.add(await perchedRaven(ravenBuffer));
   const roadUniforms = (road.material as ShaderMaterial).uniforms;
   roadUniforms.uFlameAt.value.copy(flames.at);
   roadUniforms.uHeadAt.value.set(spec.lamps.center[0], spec.lamps.face);
@@ -367,9 +398,17 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     const head = (reduced.matches ? 1 : ignition(t, XENON)) * on;
     const rear = (reduced.matches ? 1 : MathUtils.smoothstep(t, 0.3, 0.42)) * on;
     const strike = reduced.matches ? 0 : 1 - MathUtils.smoothstep(t, 0.4, 1.3);
-    lamps.set(head, headColor.setRGB(0.5 - 0.12 * strike, 0.7 - 0.1 * strike, 1.35 + 0.25 * strike), rear);
+    // Téléphone : un xénon franchement bleu (l'amorçage plus bleu encore) ; ordinateur : blanc froid bleuté.
+    const phone = narrow.matches;
+    if (phone) headColor.setRGB(0.24 - 0.08 * strike, 0.47 - 0.12 * strike, 1.6 + 0.3 * strike);
+    else headColor.setRGB(0.5 - 0.12 * strike, 0.7 - 0.1 * strike, 1.35 + 0.25 * strike);
+    lamps.set(head, headColor, rear, phone);
     roadUniforms.uHead.value = head;
     roadUniforms.uTail.value = rear;
+    // Téléphone : les pleins phares portent jusqu'à la mallette ; l'habitacle s'éclaire avec les feux.
+    highBeam.intensity = HIGH_BEAM * Math.min(head, 1.2);
+    highBeam.color.copy(headColor).multiplyScalar(1 / headColor.b);
+    cabin.set(phone ? rear : 0);
     // Les outils de la mallette : acier sombre dans la nuit, chromes brillants sous la lanterne et les phares.
     toolkit.setLight(rise);
     corniche.setLevel(level * out);
@@ -537,6 +576,17 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     const ground = (road.material as ShaderMaterial).uniforms;
     ground.uCut.value = backdrop ? EDGE - 0.05 : -1000;
     if (!shadeReady) bakeShade();
+    // Téléphone seulement : pleins phares au sol, feux stop plus vifs, barrettes LED, corbeau (programmes du format,
+    // recompilés au changement de format seulement).
+    const phone = narrow.matches;
+    if (phone) scene.add(handset);
+    else scene.remove(handset);
+    const roadMaterial = road.material as ShaderMaterial;
+    if (roadMaterial.defines.HANDSET !== Number(phone)) {
+      roadMaterial.defines.HANDSET = Number(phone);
+      roadMaterial.needsUpdate = true;
+    }
+    lamps.format(phone);
     (lights.material as ShaderMaterial).uniforms.uPixelRatio.value = renderer.getPixelRatio();
     const aspect = vw / vh;
     camera.aspect = aspect;
@@ -593,6 +643,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   // (téléphone) sont compilés d'avance, puis masqués : aucun à-coup à leur première apparition.
   flames.group.visible = true;
   lamps.group.visible = true;
+  lamps.handset.visible = true;
+  cabin.group.visible = true;
   await renderer.compileAsync(scene, camera);
   flames.group.visible = false;
   updateLamp();
@@ -620,6 +672,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
 
   const render = () => {
     cameraAt(current);
+    lamps.twinkle(camera.position);
     renderer.render(scene, camera);
     drawCallout(current);
     drawBeacon(current);
@@ -820,6 +873,8 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
             programs: renderer.info.programs?.length,
             baked: Boolean(environment),
             dprLevel: narrow.matches ? phoneQuality.level : dprLevel,
+            handset: handset.parent === scene ? handset.children.length : 0,
+            leds: cabin.group.children.length / 2,
           };
         },
       },
@@ -1014,6 +1069,15 @@ float lowBeam(vec2 p, vec2 lamp) {
   return smoothstep(0.4, 3.0, v.y) * exp(-pow(v.x / max(0.22 + v.y * 0.21, 0.05), 2.0)) / (1.0 + pow(v.y / 9.0, 2.0));
 }
 
+#if HANDSET
+// Téléphone : les pleins phares — le faisceau touche le sol plus tôt, s'ouvre et porte loin devant, jusqu'au fondu de
+// la nuit.
+float highBeam(vec2 p, vec2 lamp) {
+  vec2 v = p - lamp;
+  return smoothstep(0.2, 2.4, v.y) * exp(-pow(v.x / max(0.3 + v.y * 0.16, 0.05), 2.0)) / (1.0 + pow(v.y / 20.0, 2.0));
+}
+#endif
+
 // Téléphone : la place marquée, la bordure, l'esplanade ; la nuit de pleine lune ; les lanternes, vraies sources
 // (optique routière : la flaque porte jusqu'au véhicule, un surcroît à leur pied), la voisine y dessinant son ombre
 // portée ; le lampadaire d'en face, discret ; la lueur des flammes d'échappement.
@@ -1070,15 +1134,26 @@ vec3 phone(vec2 p) {
   vec2 h1 = (p - vec2(uHeadAt.x, uHeadAt.y + 0.4)) * vec2(1.3, 1.0);
   vec2 h2 = (p - vec2(-uHeadAt.x, uHeadAt.y + 0.4)) * vec2(1.3, 1.0);
   float front = smoothstep(uHeadAt.y - 0.1, uHeadAt.y + 0.2, p.y);
+  #if HANDSET
+  // Téléphone : les pleins phares, d'un xénon franchement bleu.
+  light += vec3(0.28, 0.52, 1.5) * uHead * (3.3 * (highBeam(p, uHeadAt) + highBeam(p, vec2(-uHeadAt.x, uHeadAt.y)))
+    + 0.7 * front * (exp(-dot(h1, h1) / 0.5) + exp(-dot(h2, h2) / 0.5)));
+  #else
   light += vec3(0.5, 0.72, 1.35) * uHead * (2.8 * (lowBeam(p, uHeadAt) + lowBeam(p, vec2(-uHeadAt.x, uHeadAt.y)))
     + 0.55 * front * (exp(-dot(h1, h1) / 0.5) + exp(-dot(h2, h2) / 0.5)));
+  #endif
   // Feux arrière, comme au freinage : leur lueur rouge sur la chaussée derrière le véhicule — vive au pied du bouclier,
   // étirée vers l'arrière, et un halo plus large autour.
   vec2 t1 = (p - vec2(uTailAt.x, uTailAt.y - 0.55)) * vec2(1.1, 0.62);
   vec2 t2 = (p - vec2(-uTailAt.x, uTailAt.y - 0.55)) * vec2(1.1, 0.62);
   vec2 tw = (p - vec2(0.0, uTailAt.y - 1.1)) * vec2(0.65, 0.5);
   float behind = smoothstep(uTailAt.y + 0.1, uTailAt.y - 0.3, p.y);
+  #if HANDSET
+  // Téléphone : des feux stop plus vifs — un rouge plus franc, plus étendu sur la chaussée.
+  light += vec3(1.0, 0.02, 0.01) * uTail * behind * (3.8 * (exp(-dot(t1, t1) / 0.5) + exp(-dot(t2, t2) / 0.5)) + 0.9 * exp(-dot(tw, tw)));
+  #else
   light += vec3(1.0, 0.045, 0.025) * uTail * behind * (2.6 * (exp(-dot(t1, t1) / 0.5) + exp(-dot(t2, t2) / 0.5)) + 0.45 * exp(-dot(tw, tw)));
+  #endif
   vec3 color = albedo * light * (1.0 + 2.5 * edge);
   // La peinture routière (billes de verre) renvoie la moindre lumière : les lignes restent blanches dans la nuit.
   color += paint * vec3(0.05, 0.052, 0.056);
@@ -1134,12 +1209,11 @@ function grainTexture() {
  * qui s'éloignent, et les phares du mécanicien qui arrivent (uArrival) et éclairent la voiture — elle
  * projette leur ombre longue sur la chaussée. Tout est calculé dans le shader : ni texture, ni objet.
  */
-function street() {
+function street(handset: boolean) {
   const material = new ShaderMaterial({
-    // Programme du format : 1 sur téléphone (resize).
     // Le sol de la place, de l'esplanade et des lanternes, sur tous les formats (le sol de l'ordinateur, desk, n'est plus
-    // compilé).
-    defines: { PHONE: 1 },
+    // compilé) ; HANDSET : téléphone — pleins phares, feux stop plus vifs (resize).
+    defines: { PHONE: 1, HANDSET: handset ? 1 : 0 },
     uniforms: {
       uInk: { value: new Color(INK) },
       uArrival: { value: 1 },
@@ -1496,12 +1570,13 @@ void main() {
 const BEAM_FRAGMENT = /* glsl */ `
 uniform float uHead;
 uniform vec3 uHeadColor;
+uniform float uAir; // densité du faisceau dans l'air (téléphone : pleins phares, plus marqués)
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vAlong;
 void main() {
   float facing = abs(dot(normalize(vNormal), normalize(cameraPosition - vWorld)));
-  float a = 0.016 * uHead * facing * facing * (1.0 - vAlong) * (1.0 - vAlong) * smoothstep(0.0, 0.05, vAlong);
+  float a = uAir * uHead * facing * facing * (1.0 - vAlong) * (1.0 - vAlong) * smoothstep(0.0, 0.05, vAlong);
   gl_FragColor = vec4(uHeadColor * a, 1.0);
   #include <colorspace_fragment>
 }`;
@@ -1541,6 +1616,8 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
   const uHead = { value: 0 };
   const uHeadColor = { value: new Color(0.5, 0.7, 1.35) };
   const uTail = { value: 0 };
+  // Téléphone (1) : feux stop à LED — le verre s'emplit de rouge, des points de LED scintillent avec le regard.
+  const uHandset = { value: 0 };
   const v = (n: number) => n.toFixed(3);
   const [cx, cy, cz] = lamps.center;
   const [hx, hy, hz] = lamps.half;
@@ -1555,11 +1632,12 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
         shader.uniforms.uHead = uHead;
         shader.uniforms.uHeadColor = uHeadColor;
         shader.uniforms.uTail = uTail;
+        shader.uniforms.uHandset = uHandset;
         shader.vertexShader = shader.vertexShader
           .replace('#include <common>', '#include <common>\nvarying vec3 vLampWorld;')
           .replace('#include <project_vertex>', '#include <project_vertex>\n\tvLampWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float uHead;\nuniform vec3 uHeadColor;\nuniform float uTail;\nvarying vec3 vLampWorld;')
+          .replace('#include <common>', '#include <common>\nuniform float uHead;\nuniform vec3 uHeadColor;\nuniform float uTail;\nuniform float uHandset;\nvarying vec3 vLampWorld;')
           .replace(
             '#include <emissivemap_fragment>',
             `#include <emissivemap_fragment>
@@ -1575,12 +1653,30 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
             float glass = 1.0 / max(diffuseColor.a, 0.25);
             float optic = smoothstep(0.3, 0.85, lum);
             totalEmissiveRadiance += uHeadColor * uHead * inLamp * (0.1 + 1.35 * optic * optic) * glass;
-            totalEmissiveRadiance += vec3(1.0, 0.015, 0.008) * uTail * inTail * (0.75 + 0.6 * smoothstep(0.1, 0.6, lum)) * glass;`,
+            totalEmissiveRadiance += vec3(1.0, 0.015, 0.008) * uTail * inTail * (0.75 + 0.6 * smoothstep(0.1, 0.6, lum)) * glass * (1.0 - uHandset);
+            if (uHandset > 0.5) {
+              // Téléphone, comme au freinage : le verre s'emplit d'un rouge plein (plus opaque en s'allumant : jamais
+              // rosé), et ses LED — une trame de points plus chauds sur les parties claires de l'optique — scintillent
+              // selon l'angle de vue (d'une image à l'autre quand on bouge).
+              float lit = inTail * min(uTail, 1.0);
+              diffuseColor.a = mix(diffuseColor.a, max(diffuseColor.a, 0.88), lit);
+              float filled = 1.0 / max(diffuseColor.a, 0.25);
+              vec3 facing = inverseTransformDirection(normal, viewMatrix);
+              vec2 cell = (abs(facing.x) > abs(facing.z) ? vLampWorld.zy : vec2(abs(vLampWorld.x), vLampWorld.y)) / 0.018;
+              vec2 dotAt = fract(cell) - 0.5;
+              float led = exp(-dot(dotAt, dotAt) * 20.0) * smoothstep(0.08, 0.35, lum);
+              float seed = fract(sin(dot(floor(cell), vec2(12.9898, 78.233))) * 43758.5453);
+              float glint = pow(max(sin(seed * 60.0 + dot(normalize(cameraPosition - vLampWorld), vec3(23.0, 31.0, 17.0))), 0.0), 10.0);
+              // Le rouge du verre, dosé sous la compression des hautes lumières (au-delà, il virerait au saumon) ; seuls les
+              // points de LED la franchissent.
+              totalEmissiveRadiance += uTail * inTail * filled
+                * (vec3(0.6, 0.003, 0.0012) * (0.9 + 0.3 * smoothstep(0.1, 0.6, lum)) + vec3(1.0, 0.07, 0.03) * led * (0.6 + 2.6 * glint));
+            }`,
           )
           // Feux arrière allumés : leurs reflets (ciel, lanterne) teintés de rouge, comme sous un verre rouge éclairé.
           .replace(
             '#include <opaque_fragment>',
-            'outgoingLight = mix(outgoingLight, outgoingLight * vec3(1.0, 0.18, 0.12), inTail * min(uTail, 1.0) * 0.85);\n#include <opaque_fragment>',
+            'outgoingLight = mix(outgoingLight, outgoingLight * mix(vec3(1.0, 0.18, 0.12), vec3(1.0, 0.04, 0.025), uHandset), inTail * min(uTail, 1.0) * mix(0.85, 0.95, uHandset));\n#include <opaque_fragment>',
           );
       };
     });
@@ -1612,7 +1708,7 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
     opacity: 0,
   });
   const air = new ShaderMaterial({
-    uniforms: { uHead, uHeadColor, uLength: { value: BEAM_LENGTH } },
+    uniforms: { uHead, uHeadColor, uLength: { value: BEAM_LENGTH }, uAir: { value: 0.016 } },
     vertexShader: BEAM_VERTEX,
     fragmentShader: BEAM_FRAGMENT,
     transparent: true,
@@ -1622,12 +1718,15 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
   });
   const cone = new ConeGeometry(1.5, BEAM_LENGTH, 32, 1, true);
   const flares: Sprite[] = [];
+  const veils: Sprite[] = [];
+  const shafts: Mesh[] = [];
   for (const x of [-cx, cx]) {
     const flare = new Sprite(glow);
     flare.position.set(x, cy, lamps.face + 0.03);
     const veil = new Sprite(aura);
     veil.position.copy(flare.position);
     veil.scale.setScalar(1.8);
+    veils.push(veil);
     group.add(veil);
     const trail = new Sprite(streak);
     trail.position.copy(flare.position);
@@ -1637,6 +1736,7 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
     shaft.rotation.x = -Math.PI / 2 + 0.05;
     shaft.position.set(x, cy - Math.sin(0.05) * (BEAM_LENGTH / 2), lamps.face + Math.cos(0.05) * (BEAM_LENGTH / 2));
     flares.push(flare);
+    shafts.push(shaft);
     group.add(flare, trail, shaft);
   }
   // Feux arrière, comme au freinage : un halo rouge sur chaque optique, et une lueur plus large autour.
@@ -1656,6 +1756,20 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
     transparent: true,
     opacity: 0,
   });
+  const halos: Sprite[] = [];
+  const wides: Sprite[] = [];
+  // Téléphone (groupe à part, dans la scène sur téléphone seulement) : l'éclat d'un feu stop, une étoile fine sur chaque
+  // optique, qui tourne un peu avec le regard — elle scintille quand on bouge.
+  const handset = new Group();
+  handset.visible = false;
+  const star = new SpriteMaterial({
+    map: starTexture(),
+    color: 0xff2410,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0,
+  });
   for (const x of [-tx, tx]) {
     const halo = new Sprite(red);
     halo.position.set(x, ty, tail.face - 0.03);
@@ -1663,24 +1777,129 @@ function headlamps(model: Object3D, lamps: Lamps, tail: Lamps, patch: boolean) {
     const wide = new Sprite(bloom);
     wide.position.copy(halo.position);
     wide.scale.setScalar(1.6);
+    halos.push(halo);
+    wides.push(wide);
     group.add(wide, halo);
+    const glint = new Sprite(star);
+    glint.position.set(x, ty, tail.face - 0.05);
+    glint.scale.setScalar(0.42);
+    handset.add(glint);
   }
-  /** Phares (0 : éteints ; l'amorçage dépasse 1) et leur teinte ; feux arrière (0 à 1). */
-  const set = (level: number, color: Color, rear: number) => {
+  /** Phares (0 : éteints ; l'amorçage dépasse 1) et leur teinte ; feux arrière (0 à 1) ; téléphone. */
+  const set = (level: number, color: Color, rear: number, phone = false) => {
     uHead.value = level * 3;
     uTail.value = rear * 1.25;
+    uHandset.value = phone ? 1 : 0;
     uHeadColor.value.copy(color);
     glow.color.copy(color);
     streak.color.copy(color).multiplyScalar(0.8);
     glow.opacity = Math.min(level, 1);
-    aura.opacity = Math.min(level, 1.4) * 0.6;
-    streak.opacity = Math.min(level, 1) * 0.5;
+    // Téléphone : le voile bleu du xénon plus dense, sa traînée plus marquée ; la lueur des feux stop plus ample.
+    aura.opacity = Math.min(level, 1.4) * (phone ? 0.85 : 0.6);
+    streak.opacity = Math.min(level, 1) * (phone ? 0.7 : 0.5);
     red.opacity = rear * 0.9;
-    bloom.opacity = rear * 0.32;
+    bloom.opacity = rear * (phone ? 0.48 : 0.32);
+    star.opacity = rear * 0.5;
     for (const flare of flares) flare.scale.setScalar(0.75 + 0.3 * Math.min(level, 1.7));
     group.visible = level > 0.002 || rear > 0.002;
+    handset.visible = rear > 0.002;
+  };
+  /**
+   * Téléphone : voile bleu plus profond et plus large, pleins phares (faisceaux longs et serrés, plus denses dans l'air),
+   * halos rouges plus amples ; ordinateur : réglages d'origine.
+   */
+  const format = (phone: boolean) => {
+    aura.color.setRGB(phone ? 0.05 : 0.18, phone ? 0.24 : 0.38, 1);
+    for (const veil of veils) veil.scale.setScalar(phone ? 2 : 1.8);
+    for (const halo of halos) halo.scale.setScalar(phone ? 0.78 : 0.62);
+    for (const wide of wides) wide.scale.setScalar(phone ? 2.3 : 1.6);
+    const length = phone ? HIGH_BEAM_LENGTH : BEAM_LENGTH;
+    for (const shaft of shafts) {
+      shaft.scale.set(phone ? 0.75 : 1, length / BEAM_LENGTH, phone ? 0.75 : 1);
+      shaft.position.set(shaft.position.x, cy - Math.sin(0.05) * (length / 2), lamps.face + Math.cos(0.05) * (length / 2));
+    }
+    air.uniforms.uAir.value = phone ? 0.024 : 0.016;
+  };
+  /** L'étoile des feux stop tourne avec le regard (position de la caméra). */
+  const twinkle = (eye: Vector3) => {
+    star.rotation = Math.atan2(eye.x, eye.z) * 1.6 + eye.y * 0.5;
+  };
+  return { group, handset, set, format, twinkle };
+}
+
+/** Éclat d'un feu stop : un cœur et deux branches fines (diffraction), fondus vers leurs pointes. */
+function starTexture() {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const g = canvas.getContext('2d') as CanvasRenderingContext2D;
+  const c = size / 2;
+  const core = g.createRadialGradient(c, c, 0, c, c, c * 0.3);
+  core.addColorStop(0, 'rgba(255,255,255,1)');
+  core.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = core;
+  g.fillRect(0, 0, size, size);
+  for (const across of [true, false]) {
+    const ray = across ? g.createLinearGradient(0, 0, size, 0) : g.createLinearGradient(0, 0, 0, size);
+    ray.addColorStop(0.15, 'rgba(255,255,255,0)');
+    ray.addColorStop(0.5, 'rgba(255,255,255,0.8)');
+    ray.addColorStop(0.85, 'rgba(255,255,255,0)');
+    g.fillStyle = ray;
+    if (across) g.fillRect(0, c - 1.5, size, 3);
+    else g.fillRect(c - 1.5, 0, 3, size);
+  }
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
+/**
+ * Téléphone : l'éclairage d'ambiance de l'habitacle — de vraies barrettes LED (guides de lumière) posées sur les
+ * contreportes, et sur la planche de bord quand elle s'y prête (tracés relevés sur les garnitures : vehicles.ts), dans
+ * la couleur de la voiture : un fil lumineux, et son halo sur la garniture qui le porte. Discret ; il s'allume avec les
+ * feux.
+ */
+function ambientStrips(cabin: Cabin) {
+  const group = new Group();
+  group.visible = false;
+  const color = new Color(...cabin.color);
+  const core = new MeshBasicMaterial({ color: color.clone() });
+  const glow = new MeshBasicMaterial({ color: color.clone(), transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false });
+  const mirror = (points: [number, number, number][]) => points.map(([x, y, z]): [number, number, number] => [-x, y, z]);
+  const paths = [...cabin.doors.flatMap((points) => [points, mirror(points)]), ...(cabin.dash ? [cabin.dash] : [])];
+  for (const points of paths) {
+    const curve = new CatmullRomCurve3(points.map((p) => new Vector3(...p)), false, 'centripetal');
+    const steps = points.length * 6;
+    group.add(new Mesh(new TubeGeometry(curve, steps, 0.003, 6), core), new Mesh(new TubeGeometry(curve, steps, 0.012, 8), glow));
+  }
+  /** Allumage (0 : éteintes). */
+  const set = (level: number) => {
+    core.color.copy(color).multiplyScalar(2 * level);
+    glow.opacity = 0.25 * level;
+    group.visible = level > 0.002;
   };
   return { group, set };
+}
+
+/**
+ * Téléphone : un grand corbeau perché sur la main courante du garde-corps (RAVEN), dans le noir — scan de musée (CC0)
+ * réduit à sa silhouette (scripts/optimize-3d.mjs : pieds à l'origine, bec vers +Z) ; plumage noir lustré, qui ne
+ * prend du décor qu'un reflet sourd.
+ */
+async function perchedRaven(buffer: ArrayBuffer) {
+  const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(buffer, '');
+  const plumage = new MeshStandardMaterial({ color: new Color(0.02, 0.02, 0.026), roughness: 0.4, metalness: 0, envMapIntensity: 0.3 });
+  gltf.scene.traverse((node) => {
+    const mesh = node as Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry.computeVertexNormals();
+    (mesh.material as Material).dispose();
+    mesh.material = plumage;
+  });
+  gltf.scene.position.set(...RAVEN.at);
+  gltf.scene.rotation.y = RAVEN.yaw;
+  return gltf.scene;
 }
 
 /**

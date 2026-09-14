@@ -66,8 +66,8 @@ const glows = (
 ).map(([lon, lat, r]) => ({ c: at([lon, lat]), r: r * PKM }));
 // Repères : les deux bouts de la côte, et ce qui la dessine (caps, îles, fleuve), les eaux.
 const places = [
-  { name: 'Cannes', at: at([7.0174, 43.5513]), anchor: 'middle', dx: 0, dy: -20 },
-  { name: 'Beaulieu-sur-Mer', at: at([7.3322, 43.7076]), anchor: 'end', dx: 14, dy: -28 },
+  { id: 'cannes', name: 'Cannes', at: at([7.0174, 43.5513]), anchor: 'middle', dx: 0, dy: -20 },
+  { id: 'beaulieu', name: 'Beaulieu-sur-Mer', at: at([7.3322, 43.7076]), anchor: 'end', dx: 14, dy: -28 },
 ];
 const features = [
   { text: 'Cap d’Antibes', at: at([7.13, 43.5413]), anchor: 'start', dx: 14, dy: 30 },
@@ -141,7 +141,7 @@ const phoneScale = { x: PV.w - 44 - 5 * PKM, y: PV.h - 34 };
         }
         {
           places.map((p) => (
-            <g class="zone__place">
+            <g class={`zone__place zone__place--${p.id}`}>
               <circle cx={f(p.at[0])} cy={f(p.at[1])} r="5" />
               <text x={f(p.at[0] + p.dx)} y={f(p.at[1] + p.dy)} text-anchor={p.anchor}>
                 {p.name}
@@ -1022,6 +1022,28 @@ const phoneScale = { x: PV.w - 44 - 5 * PKM, y: PV.h - 34 };
     font-stretch: var(--wide);
     font-weight: 800;
     font-size: 46px;
+  }
+
+  /* Téléphone : le drapeau du cartouche plus petit, remonté dans le coin ; à côté de lui, le nom (même taille) et le
+     numéro, ramené à l'échelle du drapeau, posé sur sa base ; le nom de Beaulieu-sur-Mer remonté au-dessus de son point,
+     à l'écart de celui de Nice. */
+  @media (max-width: 899px) {
+    .zone__cartouche image {
+      transform: translate(14px, 12px) scale(0.68) translate(-26px, -26px);
+    }
+
+    .zone__cartouche-name {
+      transform: translate(-60px, -26px);
+    }
+
+    .zone__cartouche-num {
+      font-size: 30px;
+      transform: translate(-58px, -41px);
+    }
+
+    .zone__place--beaulieu text {
+      transform: translate(36px, -26px);
+    }
   }
 
   /* Ordinateur : la carte lue deux fois plus grande qu'au téléphone — ses textes et repères ramenés à la taille des

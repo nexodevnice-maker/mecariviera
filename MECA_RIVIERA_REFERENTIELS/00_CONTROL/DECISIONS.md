@@ -389,3 +389,23 @@ Fin de la règle « téléphone seulement » : ce qui était réservé au télé
 - Restent propres à chaque format les seules adaptations de mise en page : colonne de texte (ordinateur) ou légendes en
   bas de l'écran (téléphone), cadrages de caméra, trait de rappel (ordinateur) ou point lumineux (téléphone), affiches.
   L'ordinateur compile désormais les 30 programmes du téléphone (19 auparavant) ; ses affiches sont refaites.
+
+### 2026-09-14 — Téléphone seulement : le corbeau, l'éclairage d'ambiance, les pleins phares, les feux stop à LED, la fin de la Méthode, la carte
+Demande du porteur « pour mobile uniquement » : l'ordinateur reste tel quel (mêmes 30 programmes, même rendu).
+- **Corbeau** : un grand corbeau (scan de musée « Common raven », Virtual Museums of Małopolska, CC0 — crédits dans
+  src/content/site.ts) perché sur la main courante du garde-corps, à gauche du banc vu du premier plan, dans le noir,
+  de dos, tourné vers la baie. Réduit à sa silhouette : 98 Mo → 30 Ko (7 700 triangles, sans texture ; plumage noir
+  lustré posé à l'exécution), chargé avec la scène.
+- **Éclairage d'ambiance** : de vraies barrettes LED (guides de lumière) posées sur les contreportes — et sur la planche
+  de bord de la sportive —, tracées par lancer de rayons sur les garnitures, un fil lumineux et son halo, dans la couleur
+  de la voiture (coupé : bleu ; berline : bleu-vert glacier ; sportive : le rouge de ses liserés) ; discrètes, elles
+  s'allument avec les feux. (Une lueur peinte sur les garnitures, essayée d'abord, a été écartée : pas réaliste.)
+- **Phares xénon** : franchement bleus (voile plus profond), en pleins phares — faisceaux longs et serrés dans l'air, sol
+  éclairé loin devant, la mallette dans leur lumière.
+- **Feux stop** : le verre s'emplit d'un rouge plein (jamais rosé), une trame de LED plus chaudes qui scintille avec le
+  regard, une étoile fine sur chaque optique ; lueur plus ample, reflet plus rouge et plus large sur la chaussée.
+- **Fin de la Méthode** : en quittant le bloc moteur, la ligne de relevé repasse de l'avant à l'arrière et referme le
+  relevé ; la voiture et sa place retournent à la nuit, il n'en reste qu'un liseré froid quand la caméra se pose, puis la
+  zone monte par-dessus.
+- **Carte** : le drapeau du cartouche plus petit, remonté dans le coin ; le nom de Beaulieu-sur-Mer remonté au-dessus de
+  son point, à l'écart de Nice.

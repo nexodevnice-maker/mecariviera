@@ -60,6 +60,8 @@ interface Shot {
   reveal: number;
   /** Isolement de la pièce : 0, la voiture reste lisible ; 1, tout ce qui n'est pas sous la lampe s'éteint presque. */
   isolate: number;
+  /** Téléphone : la fin de la Méthode — le relevé se referme pendant le segment qui mène à ce cadrage. */
+  close?: boolean;
 }
 
 const INK = 0x0b0c0e;
@@ -180,6 +182,7 @@ const SHOTS: Record<Key, Shot> = {
     pace: INSPECTION_PACES.depart,
     reveal: 1,
     isolate: 0,
+    close: true,
   },
 };
 
@@ -213,6 +216,7 @@ uniform vec3 uInk;
 uniform vec3 uLine;
 uniform float uCutout; // téléphone : la voiture seule, détourée
 uniform float uAccent; // téléphone : la pièce nommée au bleu de la marque
+uniform float uClose;  // téléphone : fin de la Méthode, le relevé refermé
 varying vec2 vUv;
 varying vec3 vWorld;
 #if PHONE
@@ -304,6 +308,10 @@ void main() {
   // À l'ouverture, ce que la ligne n'a pas encore relevé se confond avec le fond de page : pas de
   // silhouette, seulement la ligne et ce qu'elle a déjà lu.
   color = mix(uInk, color, clamp(max(max(uReveal, scanned), glow * 0.7 + line), 0.0, 1.0));
+  #if PHONE
+  // Fin de la Méthode (téléphone) : là où le relevé s'est refermé, il ne reste de la voiture qu'un liseré froid, à peine.
+  color += uLine * uClose * 0.05 * pow(1.0 - max(dot(n, toEye), 0.0), 2.0) * (1.0 - clamp(max(uReveal, scanned), 0.0, 1.0));
+  #endif
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
 }`;
@@ -331,6 +339,8 @@ uniform vec3 uInk;
 uniform vec3 uLine;
 uniform float uSweep;
 uniform float uSweepMix;
+uniform float uReveal;
+uniform float uClose;
 varying vec3 vWorld;
 
 const vec2 CAR_CENTER = vec2(0.055, -0.359);
@@ -369,6 +379,8 @@ void main() {
   float line = uSweepMix * (1.0 - smoothstep(0.005, 0.005 + 1.5 * fwidth(dx), abs(dx)));
   float glow = uSweepMix * exp(-dx * dx / 0.04);
   color += uLine * (line * 0.7 + glow * 0.05);
+  // Fin de la Méthode (téléphone) : la place retourne à la nuit derrière la ligne qui referme le relevé.
+  color = mix(color, uInk, uClose * (1.0 - max(uReveal, uSweepMix * (1.0 - smoothstep(-0.3, 0.02, dx)))));
   // La place dans un halo de nuit, fondue dans le fond de page au-delà.
   color = mix(color, uInk, smoothstep(2.4, 6.0, length(car * vec2(0.55, 0.85))));
   gl_FragColor = vec4(color, 1.0);
@@ -458,6 +470,7 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     uLine: { value: new Color(LINE) },
     uCutout: { value: 0 },
     uAccent: { value: 0 },
+    uClose: { value: 0 },
   };
 
   MeshoptDecoder.useWorkers?.(2);
@@ -571,6 +584,16 @@ export async function createInspection({ root, canvas, stops, progress, narrow }
     uniforms.uIsolate.value = lerp(a.isolate, b.isolate, t);
     // Téléphone : la lueur bleue autour de la pièce n'apparaît qu'une fois le relevé passé (fin du balayage du capot).
     uniforms.uAccent.value = accent * (i > 0 ? 1 : MathUtils.smoothstep(sweep, 0.9, 1));
+    // Téléphone : la fin de la Méthode. En quittant le bloc moteur, la ligne de relevé repasse de l'avant à l'arrière
+    // et referme le relevé : derrière elle, la voiture et sa place retournent à la nuit ; quand la caméra se pose, il
+    // n'en reste qu'un liseré froid — puis la zone monte par-dessus.
+    const closing = narrow.matches && b.close ? sweep : -1;
+    uniforms.uClose.value = closing < 0 ? 0 : MathUtils.smoothstep(closing, 0, 0.1);
+    if (closing >= 0) {
+      uniforms.uSweep.value = lerp(SWEEP_END, SWEEP_START, closing);
+      uniforms.uSweepMix.value = MathUtils.smoothstep(closing, 0, 0.08) * (1 - MathUtils.smoothstep(closing, 0.86, 1));
+      uniforms.uReveal.value = 1 - MathUtils.smoothstep(closing, 0.02, 0.16);
+    }
     shift = lerp(framings[i].shift, framings[Math.min(i + 1, last)].shift, t);
     applyOffset();
   };

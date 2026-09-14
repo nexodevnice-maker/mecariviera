@@ -80,6 +80,19 @@ const JOBS = [
       m: { ratio: 0.3, error: 0.002, tex: 512, shrink: [[/engine|interior|chassis/i, 256]] },
     },
   },
+  {
+    // Téléphone : le corbeau du garde-corps (scan de musée, CC0), vu de loin dans la nuit — une silhouette. Ni textures,
+    // ni coordonnées de texture, ni normales (lissées à l'exécution) : la géométrie se simplifie sans coutures. Repère
+    // posé : pieds à l'origine, bec vers +Z, hauteur d'un grand corbeau perché.
+    id: 'raven',
+    src: '3D/CORBEAUX/common_raven.glb',
+    keepFrame: true,
+    bare: { color: [0.018, 0.018, 0.022], roughness: 0.42 },
+    pose: { height: 0.44 },
+    variants: {
+      m: { ratio: 0.02, error: 0.01, tex: 256 },
+    },
+  },
 ];
 
 const textureSlots = (m) => [
@@ -404,6 +417,87 @@ const shrinkTextures = (rules = []) => async (doc) => {
   }
 };
 
+/**
+ * Silhouette seule : textures, coordonnées de texture et normales retirées (matériau spéculaire-brillance compris),
+ * une matière unie à la place.
+ */
+const bareMaterials = ({ color, roughness }) => (doc) => {
+  for (const extension of doc.getRoot().listExtensionsUsed()) {
+    if (/SpecularGlossiness/.test(extension.extensionName)) extension.dispose();
+  }
+  for (const material of doc.getRoot().listMaterials()) {
+    material
+      .setBaseColorTexture(null)
+      .setNormalTexture(null)
+      .setOcclusionTexture(null)
+      .setMetallicRoughnessTexture(null)
+      .setEmissiveTexture(null)
+      .setBaseColorFactor([...color, 1])
+      .setMetallicFactor(0)
+      .setRoughnessFactor(roughness);
+  }
+  for (const mesh of doc.getRoot().listMeshes()) {
+    for (const prim of mesh.listPrimitives()) {
+      for (const semantic of prim.listSemantics()) if (semantic !== 'POSITION') prim.setAttribute(semantic, null);
+    }
+  }
+};
+
+/**
+ * Repère posé d'un animal scanné : transformations des nœuds appliquées aux sommets ; pieds à l'origine (centre du bas
+ * du modèle), tête vers +Z (du bas du corps, queue comprise, au haut de la tête), hauteur `height` (m).
+ */
+const poseModel = ({ height }) => (doc) => {
+  const accessors = new Set();
+  for (const node of doc.getRoot().listNodes()) {
+    const mesh = node.getMesh();
+    if (!mesh) continue;
+    const m = node.getWorldMatrix();
+    for (const prim of mesh.listPrimitives()) {
+      const pos = prim.getAttribute('POSITION');
+      if (accessors.has(pos)) continue;
+      accessors.add(pos);
+      const a = pos.getArray();
+      for (let i = 0; i < a.length; i += 3) {
+        const [x, y, z] = [a[i], a[i + 1], a[i + 2]];
+        a[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
+        a[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+        a[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+      }
+    }
+  }
+  for (const node of doc.getRoot().listNodes()) node.setTranslation([0, 0, 0]).setRotation([0, 0, 0, 1]).setScale([1, 1, 1]);
+  const points = [];
+  for (const pos of accessors) {
+    const a = pos.getArray();
+    for (let i = 0; i < a.length; i += 3) points.push([a[i], a[i + 1], a[i + 2]]);
+  }
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (const p of points) {
+    y0 = Math.min(y0, p[1]);
+    y1 = Math.max(y1, p[1]);
+  }
+  const h = y1 - y0;
+  const middle = (list) => [0, 2].map((k) => list.reduce((sum, p) => sum + p[k], 0) / list.length);
+  const [fx, fz] = middle(points.filter((p) => p[1] < y0 + 0.06 * h));
+  const head = middle(points.filter((p) => p[1] > y1 - 0.2 * h));
+  const body = middle(points.filter((p) => p[1] > y0 + 0.15 * h && p[1] < y0 + 0.35 * h));
+  const yaw = Math.atan2(head[0] - body[0], head[1] - body[1]);
+  const [c, s, k] = [Math.cos(yaw), Math.sin(yaw), height / h];
+  for (const pos of accessors) {
+    const a = pos.getArray();
+    for (let i = 0; i < a.length; i += 3) {
+      const [x, y, z] = [a[i] - fx, a[i + 1] - y0, a[i + 2] - fz];
+      a[i] = k * (x * c - z * s);
+      a[i + 1] = k * y;
+      a[i + 2] = k * (x * s + z * c);
+    }
+    pos.setArray(a);
+  }
+  console.log(`  pose : hauteur ${h.toFixed(3)} → ${height} m (×${k.toFixed(3)}), cap ${((yaw * 180) / Math.PI).toFixed(1)}°`);
+};
+
 await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready, MeshoptSimplifier.ready]);
 const io = new NodeIO()
   .registerExtensions(ALL_EXTENSIONS)
@@ -426,9 +520,11 @@ for (const job of JOBS) {
       dedup(),
       flatten(),
       join(),
-      weld(),
     ];
+    if (job.bare) steps.push(bareMaterials(job.bare));
+    steps.push(weld());
     if (v.ratio < 1) steps.push(simplifyExcept(PAINT, { simplifier: MeshoptSimplifier, ratio: v.ratio, error: v.error }));
+    if (job.pose) steps.push(poseModel(job.pose));
     if (!job.keepFrame) steps.push(center({ pivot: 'below' }));
     steps.push(
       prune(),

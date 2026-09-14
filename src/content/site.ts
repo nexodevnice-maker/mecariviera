@@ -282,6 +282,12 @@ export const credits: Credit[] = [
     license: 'CC BY-NC-SA 4.0',
     url: 'https://sketchfab.com/3d-models/2022-bmw-m4-csl-cbd90adb3b2c4af28da1ede516d55b79',
   },
+  {
+    title: 'Common raven',
+    author: 'Virtual Museums of Małopolska',
+    license: 'CC0 1.0',
+    url: 'https://sketchfab.com/3d-models/common-raven-ec9c0ac738fd4495af334ea2092e8d89',
+  },
 ];
 
 /** Éléments à réunir avant la mise en ligne commerciale (09_GATES/PUBLICATION_READINESS). */

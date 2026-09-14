@@ -24,6 +24,18 @@ export interface Plate {
   slope: number;
 }
 
+/**
+ * Téléphone, éclairage d'ambiance de l'habitacle : les barrettes LED, tracées par lancer de rayons sur les garnitures
+ * des modèles -m (m) — sur les contreportes, côté conducteur (+x ; l'autre côté en miroir), et sur la planche de bord
+ * si elle s'y prête —, à 5 mm des garnitures, là où elles sont les plus droites sous la ligne de caisse ; leur teinte
+ * (linéaire), accordée à la voiture.
+ */
+export interface Cabin {
+  doors: Vec3[][];
+  dash?: Vec3[];
+  color: [number, number, number];
+}
+
 export interface Vehicle {
   id: VehicleId;
   /** Silhouette, jamais la marque : aucune affiliation constructeur suggérée. */
@@ -41,6 +53,7 @@ export interface Vehicle {
   tail: Lamps;
   plates: { front: Plate; rear: Plate };
   bumper: number;
+  cabin: Cabin;
 }
 
 export const VEHICLES: Vehicle[] = [
@@ -58,6 +71,16 @@ export const VEHICLES: Vehicle[] = [
     // Avant : devant la grille basse, sur son support ; arrière : dans son logement, sous la malle.
     plates: { front: { at: [0, 0.39, 2.362], slope: 0 }, rear: { at: [0, 0.52, -2.346], slope: 0.27 } },
     bumper: 2.343,
+    // Le bleu de sa peinture.
+    cabin: {
+      doors: [
+        [[0.621, 0.82, -1.01], [0.641, 0.82, -0.93], [0.649, 0.82, -0.85], [0.656, 0.82, -0.77], [0.651, 0.82, -0.69], [0.65, 0.82, -0.61],
+          [0.65, 0.82, -0.53], [0.652, 0.82, -0.45], [0.689, 0.82, -0.37], [0.689, 0.82, -0.29], [0.695, 0.82, -0.21], [0.705, 0.82, -0.13],
+          [0.71, 0.82, -0.05], [0.714, 0.82, 0.03], [0.714, 0.82, 0.11], [0.713, 0.82, 0.19]],
+        [[0.696, 0.82, 0.35], [0.687, 0.82, 0.43], [0.667, 0.82, 0.51]],
+      ],
+      color: [0.14, 0.38, 1.25],
+    },
   },
   {
     id: 'rs3',
@@ -74,6 +97,15 @@ export const VEHICLES: Vehicle[] = [
     // Avant : sur le support de la calandre ; arrière : sur la malle, entre les feux.
     plates: { front: { at: [0, 0.44, 2.262], slope: -0.04 }, rear: { at: [0, 0.79, -2.118], slope: 0.28 } },
     bumper: 2.23,
+    // Le gris bleuté de sa peinture, poussé vers un bleu-vert glacier.
+    cabin: {
+      doors: [
+        [[0.689, 0.82, -0.891], [0.693, 0.82, -0.779], [0.695, 0.82, -0.667]],
+        [[0.682, 0.82, -0.444], [0.682, 0.82, -0.333], [0.671, 0.82, -0.221], [0.692, 0.82, -0.109], [0.714, 0.82, 0.002], [0.714, 0.82, 0.114],
+          [0.71, 0.82, 0.225]],
+      ],
+      color: [0.06, 0.7, 0.78],
+    },
   },
   {
     id: 'm4',
@@ -91,6 +123,16 @@ export const VEHICLES: Vehicle[] = [
     // (inclinée comme elle).
     plates: { front: { at: [0, 0.36, 2.382], slope: 0 }, rear: { at: [0, 0.785, -2.248], slope: 0.27 } },
     bumper: 2.334,
+    // Le rouge de ses liserés, sur son gris.
+    cabin: {
+      doors: [
+        [[0.655, 0.85, -0.91], [0.652, 0.85, -0.833], [0.646, 0.85, -0.755], [0.64, 0.85, -0.678], [0.635, 0.85, -0.601], [0.636, 0.85, -0.523],
+          [0.649, 0.85, -0.446], [0.676, 0.85, -0.368], [0.681, 0.85, -0.291], [0.687, 0.85, -0.214], [0.688, 0.85, -0.136], [0.692, 0.85, -0.059],
+          [0.695, 0.85, 0.018], [0.698, 0.85, 0.096], [0.699, 0.85, 0.173], [0.699, 0.85, 0.251]],
+      ],
+      dash: [[-0.143, 0.85, 0.503], [-0.086, 0.85, 0.509], [-0.029, 0.85, 0.517], [0.029, 0.85, 0.526], [0.086, 0.85, 0.534], [0.143, 0.85, 0.545]],
+      color: [1, 0.07, 0.035],
+    },
   },
 ];
 
