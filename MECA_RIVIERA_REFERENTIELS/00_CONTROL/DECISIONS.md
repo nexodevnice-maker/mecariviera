@@ -409,3 +409,12 @@ Demande du porteur « pour mobile uniquement » : l'ordinateur reste tel quel (m
   zone monte par-dessus.
 - **Carte** : le drapeau du cartouche plus petit, remonté dans le coin ; le nom de Beaulieu-sur-Mer remonté au-dessus de
   son point, à l'écart de Nice.
+
+### 2026-09-14 — Téléphone seulement : la chaussée mouillée
+- La chaussée, la bordure et l'esplanade mouillées : plus sombres, de larges flaques, l'eau au pied de la bordure et dans
+  les joints des dalles. La scène s'y reflète — voiture, phares, feux stop, lanternes, lune — presque nette dans les
+  flaques, étirée en traînées verticales sur le bitume humide, d'autant plus forte qu'on regarde loin (Fresnel de l'eau).
+- Technique : miroir du sol (caméra symétrique sous la chaussée, plan de coupe oblique) rendu avant chaque image dans un
+  coin de l'écran à 40 % de la définition, puis copié dans une texture — les programmes de l'image servent tels quels,
+  aucune compilation de plus. Coût mesuré : environ +25 % par image sur la machine de test ; la définition adaptative du
+  téléphone (quality.ts) s'ajuste si besoin. Ordinateur inchangé.
