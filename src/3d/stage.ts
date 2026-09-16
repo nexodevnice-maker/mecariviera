@@ -16,7 +16,6 @@ import {
   EquirectangularReflectionMapping,
   Float32BufferAttribute,
   Fog,
-  FramebufferTexture,
   Group,
   InstancedMesh,
   LatheGeometry,
@@ -32,7 +31,6 @@ import {
   NormalBlending,
   OrthographicCamera,
   PerspectiveCamera,
-  Plane,
   PlaneGeometry,
   PMREMGenerator,
   PointLight,
@@ -279,8 +277,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(await assets.model, '');
   const car = prepareCar(gltf.scene);
   const road = street(narrow.matches);
-  const carShadow = contactShadow(car);
-  scene.add(car, carShadow, road);
+  scene.add(car, contactShadow(car), road);
   // Téléphone : la nuit et la pleine lune, puis les lampadaires qui s'allument au premier geste — niveaux partagés
   // par le sol, le garde-corps et le cône de lumière (mêmes uniformes).
   const lampUniforms: LampUniforms = {
@@ -328,8 +325,7 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   );
   const plates = licensePlates(spec.plates, plateTexture(family, Math.min(8, renderer.capabilities.getMaxAnisotropy())));
   // La corniche et ses lumières, les flammes, les feux, la mallette, le banc, les plaques : sur tous les formats.
-  const kitShadow = contactShadow(kit);
-  const phoneSet = new Group().add(corniche.group, flames.group, flames.light, lamps.group, kit, kitShadow, bench, plates);
+  const phoneSet = new Group().add(corniche.group, flames.group, flames.light, lamps.group, kit, contactShadow(kit), bench, plates);
   scene.add(phoneSet);
   // Téléphone seulement (resize : l'ordinateur ne les compile jamais) — les pleins phares, qui portent leur lumière sur
   // la mallette ; l'éclat scintillant des feux stop ; les barrettes LED de l'habitacle ; le corbeau du garde-corps.
@@ -343,7 +339,6 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   roadUniforms.uFlameAt.value.copy(flames.at);
   roadUniforms.uHeadAt.value.set(spec.lamps.center[0], spec.lamps.face);
   roadUniforms.uTailAt.value.set(spec.tail.center[0], spec.tail.face);
-  roadUniforms.uLampY.value.set(spec.lamps.center[1], spec.tail.center[1]);
   // L'ombre portée du véhicule sous la lanterne voisine : calculée une fois, à la première mise en page téléphone.
   const carBox = new Box3().setFromObject(car);
   let shadeReady = false;
@@ -372,11 +367,6 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   }
   const lights = coastLights();
   scene.add(lights);
-  // Téléphone : la chaussée mouillée (wetMirror, créée au premier passage au format) — sans reflet : le sol lui-même, les
-  // ombres posées dessus, les lumières de côte (ordinateur sans décor).
-  let wet: ReturnType<typeof wetMirror> | null = null;
-  const dry: Object3D[] = [road, carShadow, kitShadow, lights];
-  let mirrorOn = true;
 
   // Téléphone : le haut de la page appartient à la nuit. La lanterne s'allume dès que la page le quitte (au premier
   // geste) et s'éteint quand on y revient. lampT : secondes d'allumage (LIT : posé) ; lampFade : 1 allumée, 0
@@ -597,11 +587,6 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
       roadMaterial.needsUpdate = true;
     }
     lamps.format(phone);
-    if (phone && !wet) {
-      wet = wetMirror();
-      roadUniforms.uReflectMatrix.value = wet.matrix;
-    }
-    if (wet) roadUniforms.uReflect.value = wet.resize(renderer, vw, vh);
     (lights.material as ShaderMaterial).uniforms.uPixelRatio.value = renderer.getPixelRatio();
     const aspect = vw / vh;
     camera.aspect = aspect;
@@ -618,8 +603,6 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
     fitBackdrop();
     // Le clair de lune vient de la lune du décor.
     if (backdrop?.moon) moonLight.position.copy(backdrop.moon.position).setLength(40);
-    // Téléphone : la lune se reflète dans la chaussée mouillée.
-    if (backdrop?.moon) roadUniforms.uMoonAt.value.copy(backdrop.moon.position);
     updateLamp();
     progress.measure();
     dirty = true;
@@ -690,8 +673,6 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
   const render = () => {
     cameraAt(current);
     lamps.twinkle(camera.position);
-    // Téléphone : le miroir de la chaussée mouillée, juste avant l'image.
-    if (wet && mirrorOn && narrow.matches) wet.render(renderer, scene, camera, dry, vw, vh);
     renderer.render(scene, camera);
     drawCallout(current);
     drawBeacon(current);
@@ -856,13 +837,11 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
             return [Math.round(((anchor.x + 1) / 2) * vw), Math.round(((1 - anchor.y) / 2) * vh)];
           });
         },
-        // Coût d'une image (ms), sol affiché ou non, miroir de la chaussée mouillée ou non (téléphone) : readPixels attend
-        // la fin du rendu GPU.
-        bench(frames = 12, withRoad = true, withMirror = true) {
+        // Coût d'une image (ms), sol affiché ou non : readPixels attend la fin du rendu GPU.
+        bench(frames = 12, withRoad = true) {
           const gl = renderer.getContext();
           const pixel = new Uint8Array(4);
           road.visible = withRoad;
-          mirrorOn = withMirror;
           render();
           gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
           const t0 = performance.now();
@@ -872,7 +851,6 @@ export async function createStage({ root, canvas, stops, progress, narrow, vehic
           }
           const ms = (performance.now() - t0) / frames;
           road.visible = true;
-          mirrorOn = true;
           render();
           return Number(ms.toFixed(1));
         },
@@ -1030,7 +1008,6 @@ const float SPREAD = 2.29;
 const float LAMP_POWER = ${glsl(LAMP_POWER)};
 const float LAMP_FOOT2 = ${glsl(LAMP_FOOT * LAMP_FOOT)};
 const float LAMP_SPREAD2 = ${glsl(LAMP_SPREAD * LAMP_SPREAD)};
-const float LAMP_Y = ${glsl(LAMP_FOOT)}; // hauteur des lanternes
 
 // Grain de matière à l'échelle donnée (texture pavable ; les mipmaps l'adoucissent au loin).
 float grain(vec2 p, float scale) {
@@ -1099,32 +1076,6 @@ float highBeam(vec2 p, vec2 lamp) {
   vec2 v = p - lamp;
   return smoothstep(0.2, 2.4, v.y) * exp(-pow(v.x / max(0.3 + v.y * 0.16, 0.05), 2.0)) / (1.0 + pow(v.y / 20.0, 2.0));
 }
-
-// Téléphone : la chaussée mouillée — la scène dans le miroir du sol (wetMirror : image de l'écran, déjà en sRGB) ; la lune
-// du décor ; hauteur des phares et des feux arrière.
-uniform sampler2D uReflect;
-uniform vec3 uMoonAt;
-uniform vec2 uLampY;
-varying vec4 vReflect;
-
-// Reflet d'une source vive sur une surface mouillée : lobe de Blinn normalisé — au ras du sol, il s'étire vers le regard
-// (traînée) ; très serré, c'est l'image nette de la source dans l'eau.
-float specular(vec3 toLight, vec3 toEye, vec3 n, float sharp) {
-  return pow(max(dot(n, normalize(toLight + toEye)), 0.0), sharp) * (sharp + 8.0) * 0.02;
-}
-
-// Le reflet sur un sol mouillé : l'image miroir, étirée en traînée verticale sur le bitume humide (les lumières y filent
-// vers le regard), presque nette dans une flaque ; ramenée du sRGB à la lumière, les sources (lanternes, phares, feux)
-// rendues à leur éclat — l'inverse de la compression de l'image, qui les écrête.
-vec3 wetReflection(vec4 at, float blur) {
-  vec2 uv = at.xy / at.w;
-  float s = 0.07 * blur;
-  vec3 sum = texture2D(uReflect, uv).rgb * 0.36
-    + (texture2D(uReflect, uv + vec2(0.0, 0.3 * s)).rgb + texture2D(uReflect, uv - vec2(0.0, 0.3 * s)).rgb) * 0.2
-    + (texture2D(uReflect, uv + vec2(0.0, s)).rgb + texture2D(uReflect, uv - vec2(0.0, s)).rgb) * 0.12;
-  vec3 mirrored = pow(sum, vec3(2.2));
-  return mirrored / max(1.0 - 0.8 * max(mirrored.r, max(mirrored.g, mirrored.b)), 0.2);
-}
 #endif
 
 // Téléphone : la place marquée, la bordure, l'esplanade ; la nuit de pleine lune ; les lanternes, vraies sources
@@ -1160,19 +1111,6 @@ vec3 phone(vec2 p) {
   // Caniveau plus sombre au pied de la bordure ; arête de la bordure qui accroche la lumière.
   albedo *= 1.0 - 0.3 * smoothstep(KERB + 0.35, KERB + 0.05, p.x) * (1.0 - pavement);
   float edge = (1.0 - smoothstep(0.0, 0.03 + length(fwidth(p)), abs(p.x - KERB))) * 0.5;
-
-  #if HANDSET
-  // Téléphone : la chaussée mouillée. Des flaques aux bords nets — l'eau affleure, l'asphalte n'y paraît presque plus —,
-  // cernées d'un bitume détrempé plus sombre ; l'eau au pied de la bordure et dans les joints des dalles ; ailleurs,
-  // bitume et pierre humides, plus sombres.
-  float field = grain(p + vec2(3.7, 9.1), 0.07) * 0.8 + grain(p, 0.23) * 0.2;
-  float rim = fwidth(field) + 0.004;
-  float puddle = smoothstep(0.66 - rim, 0.66 + rim, field);
-  float soaked = smoothstep(0.55, 0.66, field);
-  float gutter = (1.0 - smoothstep(KERB + 0.05, KERB + 0.55, p.x)) * onRoad;
-  float water = max(puddle, max(gutter * 0.9, joint * plaza * 0.8));
-  albedo *= mix(0.72 - 0.15 * soaked, 0.42, water);
-  #endif
 
   // Ombre portée du véhicule par la lanterne voisine : nette au contact, adoucie en s'en éloignant (pénombre).
   vec2 shadow = texture2D(uShade, clamp((p - uShadeArea.xy) * uShadeArea.zw, 0.0, 1.0)).rg;
@@ -1219,60 +1157,6 @@ vec3 phone(vec2 p) {
   vec3 color = albedo * light * (1.0 + 2.5 * edge);
   // La peinture routière (billes de verre) renvoie la moindre lumière : les lignes restent blanches dans la nuit.
   color += paint * vec3(0.05, 0.052, 0.056);
-  #if HANDSET
-  // Le reflet, d'autant plus fort qu'on regarde loin (Fresnel de l'eau) : la scène dans le miroir du sol (voiture,
-  // décor) — limpide dans les flaques, brouillée et étirée sur le bitume humide — et les sources vives rendues à leur
-  // éclat : la lune et sa traînée sur l'eau, les lanternes, les phares, les feux ; sur l'eau, des paillettes qui
-  // scintillent quand on bouge.
-  vec3 toEye = normalize(cameraPosition - vWorld);
-  float fresnel = 0.04 + 0.96 * pow(1.0 - clamp(toEye.y, 0.0, 1.0), 5.0);
-  // La surface : le grain du bitume sous le film d'eau ; une flaque est lisse.
-  vec2 slope = (vec2(grain(p, 3.1), grain(p + vec2(17.0, 5.0), 2.7)) - 0.5) * mix(0.12, 0.006, water);
-  vec3 n = normalize(vec3(slope.x, 1.0, slope.y));
-  vec4 at = vReflect;
-  at.xy += slope * mix(0.25, 0.6, water) * at.w;
-  // Dans l'eau, le ciel de pleine lune : une flaque n'est jamais noire.
-  vec3 wet = wetReflection(at, mix(1.0, 0.08, water)) * mix(0.8, 1.0, water) + vec3(0.045, 0.06, 0.085) * uMoon * water;
-  // Les sources : une image nette dans l'eau, une traînée vers le regard sur le bitume humide ; la lune, large, s'étire sur
-  // l'eau.
-  float sharp = mix(60.0, 380.0, water);
-  vec3 moonTo = normalize(uMoonAt - vWorld);
-  vec3 sources = vec3(0.72, 0.8, 1.0) * 0.9 * uMoon * specular(moonTo, toEye, n, mix(28.0, 220.0, water));
-  for (int k = 0; k < 2; k++) {
-    sources += uLampTint * lamp * 1.2 * specular(normalize(vec3(LAMPS[k].x, LAMP_Y, LAMPS[k].y) - vWorld), toEye, n, sharp);
-  }
-  vec3 xenon = vec3(0.28, 0.52, 1.5) * uHead;
-  // Le faisceau des pleins phares fait briller le sol mouillé qu'il éclaire.
-  float beamPool = highBeam(p, uHeadAt) + highBeam(p, vec2(-uHeadAt.x, uHeadAt.y));
-  for (int side = -1; side <= 1; side += 2) {
-    // Phares vers l'avant, feux vers l'arrière : seul le sol qu'ils éclairent renvoie leur image.
-    vec3 head = normalize(vec3(float(side) * uHeadAt.x, uLampY.x, uHeadAt.y) - vWorld);
-    sources += xenon * (1.6 * specular(head, toEye, n, sharp) * smoothstep(0.1, 0.6, -head.z) + 0.45 * beamPool * specular(head, toEye, n, 12.0));
-    vec3 tail = normalize(vec3(float(side) * uTailAt.x, uLampY.y, uTailAt.y) - vWorld);
-    sources += vec3(1.0, 0.02, 0.01) * uTail * 1.2 * specular(tail, toEye, n, sharp) * smoothstep(0.1, 0.6, tail.z);
-  }
-  // Paillettes, l'eau cristalline : des micro-facettes (cellules de 1,5 cm orientées au hasard, une sur sept), là où
-  // l'écran les distingue encore ; elles renvoient la lune, la lanterne voisine et les phares.
-  vec2 cell = floor(p * 66.0);
-  // Un point rond, placé au hasard dans sa cellule (jamais une trame).
-  vec2 inCell = fract(p * 66.0) - (0.25 + 0.5 * vec2(hash(cell + 1.7), hash(cell + 9.2)));
-  float fleck = step(0.9, hash(cell + 3.17)) * (1.0 - smoothstep(0.12, 0.3, length(inCell)))
-    * (1.0 - smoothstep(0.008, 0.02, fwidth(p.x) + fwidth(p.y))) * (0.5 + 0.5 * water);
-  vec3 sparkle = vec3(0.0);
-  if (fleck > 0.0) {
-    vec3 facet = normalize(vec3(hash(cell) - 0.5, 2.2, hash(cell + 7.31) - 0.5));
-    vec3 near = normalize(vec3(LAMPS[0].x, LAMP_Y, LAMPS[0].y) - vWorld);
-    vec3 right = normalize(vec3(uHeadAt.x, uLampY.x, uHeadAt.y) - vWorld);
-    vec3 left = normalize(vec3(-uHeadAt.x, uLampY.x, uHeadAt.y) - vWorld);
-    sparkle = 1.5 * (vec3(0.72, 0.8, 1.0) * uMoon * specular(moonTo, toEye, facet, 300.0)
-      + uLampTint * lamp * specular(near, toEye, facet, 300.0)
-      + xenon * (specular(right, toEye, facet, 300.0) * smoothstep(0.1, 0.6, -right.z)
-        + specular(left, toEye, facet, 300.0) * smoothstep(0.1, 0.6, -left.z)));
-  }
-  // Le bord des flaques accroche la lumière : un liseré d'eau, à peine.
-  float edgeLine = (1.0 - smoothstep(0.0, 2.0 * rim, abs(field - 0.66))) * (1.0 - smoothstep(9.0, 20.0, length(vWorld - cameraPosition)));
-  color += (wet + sources + sparkle * fleck) * fresnel + (uLampTint * lamp * 0.25 + vec3(0.06, 0.07, 0.09)) * edgeLine * fresnel * 0.3;
-  #endif
   // Au pied des lanternes, les hautes lumières s'adoucissent au lieu d'être écrêtées.
   vec3 over = max(color - 0.7, 0.0);
   return min(color, 0.7) + 0.3 * (1.0 - exp(-over / 0.3));
@@ -1347,24 +1231,12 @@ function street(handset: boolean) {
       uTail: { value: 0 },
       uTailAt: { value: new Vector2() },
       uNoise: { value: grainTexture() },
-      // Téléphone : la chaussée mouillée — l'image miroir de la scène, et le passage du sol à cette image (wetMirror).
-      uReflect: { value: null as Texture | null },
-      uReflectMatrix: { value: new Matrix4() },
-      uMoonAt: { value: new Vector3(-60, 30, -40) },
-      uLampY: { value: new Vector2() },
     },
     vertexShader: /* glsl */ `
       varying vec3 vWorld;
-      #if HANDSET
-      uniform mat4 uReflectMatrix;
-      varying vec4 vReflect;
-      #endif
       void main() {
         vec4 world = modelMatrix * vec4(position, 1.0);
         vWorld = world.xyz;
-        #if HANDSET
-        vReflect = uReflectMatrix * world;
-        #endif
         gl_Position = projectionMatrix * viewMatrix * world;
       }`,
     fragmentShader: STREET_FRAGMENT,
@@ -1372,80 +1244,6 @@ function street(handset: boolean) {
   const mesh = new Mesh(new PlaneGeometry(160, 160), material);
   mesh.rotation.x = -Math.PI / 2;
   return mesh;
-}
-
-/**
- * Téléphone : la chaussée mouillée. La scène vue dans le miroir du sol — caméra symétrique sous la chaussée, plan de
- * coupe oblique (rien de ce qui est dessous) —, rendue avant chaque image dans un coin de l'écran, en basse définition,
- * puis copiée dans une texture : les programmes de l'image servent tels quels (aucune compilation de plus, aucune cible
- * de rendu). Le sol la lit, brouillée et étirée comme sur une route mouillée (STREET_FRAGMENT).
- */
-function wetMirror() {
-  const SCALE = 0.4;
-  const UP = new Vector3(0, 1, 0);
-  const matrix = new Matrix4();
-  const mirror = new PerspectiveCamera();
-  const eye = new Vector3();
-  const look = new Vector3();
-  const rotation = new Matrix4();
-  const plane = new Plane();
-  const clip = new Vector4();
-  const q = new Vector4();
-  const corner = new Vector2();
-  const bias = new Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
-  let texture = new FramebufferTexture(1, 1);
-  let width = 1;
-  let height = 1;
-  /** Définition de l'image miroir (une part de la vue) et la texture qui la reçoit. */
-  const resize = (renderer: WebGLRenderer, vw: number, vh: number) => {
-    width = Math.max(1, Math.round(vw * SCALE));
-    height = Math.max(1, Math.round(vh * SCALE));
-    const w = Math.round(width * renderer.getPixelRatio());
-    const h = Math.round(height * renderer.getPixelRatio());
-    if (w !== texture.image.width || h !== texture.image.height) {
-      texture.dispose();
-      texture = new FramebufferTexture(w, h);
-      texture.minFilter = LinearFilter;
-      texture.magFilter = LinearFilter;
-    }
-    return texture;
-  };
-  /** Le miroir de la vue `view`, les objets `dry` masqués le temps du passage ; puis l'écran entier rendu à l'image. */
-  const render = (renderer: WebGLRenderer, scene: Scene, view: PerspectiveCamera, dry: Object3D[], vw: number, vh: number) => {
-    view.updateMatrixWorld();
-    eye.setFromMatrixPosition(view.matrixWorld);
-    rotation.extractRotation(view.matrixWorld);
-    look.set(0, 0, -1).applyMatrix4(rotation).add(eye);
-    mirror.position.set(eye.x, -eye.y, eye.z);
-    mirror.up.set(0, 1, 0).applyMatrix4(rotation);
-    mirror.up.y = -mirror.up.y;
-    mirror.lookAt(look.x, -look.y, look.z);
-    mirror.updateMatrixWorld();
-    mirror.projectionMatrix.copy(view.projectionMatrix);
-    matrix.copy(bias).multiply(mirror.projectionMatrix).multiply(mirror.matrixWorldInverse);
-    // Plan de coupe oblique (E. Lengyel) : la chaussée devient le plan proche du miroir.
-    plane.set(UP, 0).applyMatrix4(mirror.matrixWorldInverse);
-    clip.set(plane.normal.x, plane.normal.y, plane.normal.z, plane.constant);
-    const e = mirror.projectionMatrix.elements;
-    q.set((Math.sign(clip.x) + e[8]) / e[0], (Math.sign(clip.y) + e[9]) / e[5], -1, (1 + e[10]) / e[14]);
-    clip.multiplyScalar(2 / clip.dot(q));
-    e[2] = clip.x;
-    e[6] = clip.y;
-    e[10] = clip.z + 1;
-    e[14] = clip.w;
-    mirror.projectionMatrixInverse.copy(mirror.projectionMatrix).invert();
-    const shown = dry.map((object) => object.visible);
-    for (const object of dry) object.visible = false;
-    renderer.setScissorTest(true);
-    renderer.setScissor(0, 0, width, height);
-    renderer.setViewport(0, 0, width, height);
-    renderer.render(scene, mirror);
-    renderer.copyFramebufferToTexture(texture, corner);
-    renderer.setScissorTest(false);
-    renderer.setViewport(0, 0, vw, vh);
-    dry.forEach((object, i) => (object.visible = shown[i]));
-  };
-  return { matrix, resize, render };
 }
 
 /** Garde-corps et lampadaires : éclairés par la même nuit que le sol (lanternes, ciel, lueur de la baie). */
