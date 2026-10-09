@@ -1,6 +1,7 @@
 ---
 import '@fontsource-variable/archivo/wdth.css';
 import '../styles/global.css';
+import Watermark from '../components/Watermark.astro';
 import fontLatin from '@fontsource-variable/archivo/files/archivo-latin-wdth-normal.woff2?url';
 
 interface Props {
@@ -78,5 +79,6 @@ const website =
   <body>
     <a class="skip-link" href="#contenu">Aller au contenu</a>
     <slot />
+    <Watermark />
   </body>
 </html>
